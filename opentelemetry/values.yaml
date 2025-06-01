@@ -1,0 +1,64 @@
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+config:
+  receivers:
+    kubeletstats:
+      collection_interval: 30s
+      auth_type: "serviceAccount"
+      endpoint: "https://${K8S_NODE_IP}:10250"
+      insecure_skip_verify: true
+      metric_groups:
+        - pod
+        - node
+
+  processors:
+    batch:
+      send_batch_max_size: 100
+      send_batch_size: 10
+      timeout: 10s
+    resourcedetection:
+      detectors: [env, system]
+
+  exporters:
+    debug:
+      verbosity: detailed
+    otlp/uptrace:
+      endpoint: https://otlp.uptrace.dev:4317
+      tls: { insecure: false }
+      headers:
+        uptrace-dsn: ${UPTRACE_DSN}
+
+  service:
+    pipelines:
+      metrics:
+        receivers: [kubeletstats]
+        processors: [batch, resourcedetection]
+        exporters: [otlp/uptrace, debug]
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 500m
+    memory: 256Mi
+
+serviceAccount:
+  create: true
+  name: otel-collector
+
+extraEnvs:
+  - name: K8S_NODE_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: UPTRACE_DSN
+    valueFrom:
+      secretKeyRef:
+        name: otel-collector-secrets
+        key: UPTRACE_DSN
