@@ -72,8 +72,13 @@ config:
           - from: connection
     attributes/set_service_name:
       actions:
-        - key: service_name
+        - key: service.name
           from_attribute: k8s.container.name
+          action: upsert
+    attributes/copy_target_to_route:
+      actions:
+        - key: http.route
+          from_attribute: http.target
           action: upsert
 
   exporters:
@@ -97,7 +102,7 @@ config:
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
-        processors: [k8sattributes, attributes/set_service_name, batch, resourcedetection]
+        processors: [attributes/copy_target_to_route, k8sattributes, batch, resourcedetection]
         exporters: [otlp/uptrace, debug]
 
 resources:
