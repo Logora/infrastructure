@@ -44,6 +44,13 @@ config:
             layout_type: epoch
 
   processors:
+    filter/drop_k8s_namespaces:
+      metrics:
+        exclude:
+          match_type: regexp
+          resource_attributes:
+            - key: k8s.namespace.name
+              value: (kube-system|kube-public|cert-manager)
     batch:
       send_batch_max_size: 100
       send_batch_size: 10
@@ -94,7 +101,7 @@ config:
     pipelines:
       metrics:
         receivers: [kubeletstats]
-        processors: [batch, resourcedetection]
+        processors: [filter/drop_k8s_namespaces, batch, resourcedetection]
         exporters: [otlp/uptrace]
       logs:
         receivers: [filelog]
