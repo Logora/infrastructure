@@ -15,6 +15,22 @@ config:
       metric_groups:
         - pod
         - node
+        - container
+    filelog:
+      include:
+        - /var/log/pods/*/*/*.log
+      start_at: beginning
+      include_file_path: true
+      include_file_name: true
+      operators:
+        - type: filter
+          expr: 'not file_name matches ".*_monitoring-.*\.log$"'
+        - type: json_parser
+          parse_from: body
+          timestamp:
+            parse_from: attributes.time
+            layout: 'ms'
+            layout_type: epoch
 
   processors:
     batch:
@@ -37,6 +53,10 @@ config:
     pipelines:
       metrics:
         receivers: [kubeletstats]
+        processors: [batch, resourcedetection]
+        exporters: [otlp/uptrace]
+      logs:
+        receivers: [filelog]
         processors: [batch, resourcedetection]
         exporters: [otlp/uptrace, debug]
 
@@ -62,3 +82,14 @@ extraEnvs:
       secretKeyRef:
         name: otel-collector-secrets
         key: UPTRACE_DSN
+
+extraVolumes:
+  - name: varlogpods
+    hostPath:
+      path: /var/log/pods
+      type: Directory
+
+extraVolumeMounts:
+  - name: varlogpods
+    mountPath: /var/log/pods
+    readOnly: true
