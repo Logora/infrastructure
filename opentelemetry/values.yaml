@@ -14,7 +14,7 @@ config:
         http:
           endpoint: 0.0.0.0:4318
     kubeletstats:
-      collection_interval: 30s
+      collection_interval: 15s
       auth_type: "serviceAccount"
       endpoint: "https://${K8S_NODE_IP}:10250"
       insecure_skip_verify: true
@@ -51,9 +51,9 @@ config:
           resource_attributes:
             - key: k8s.namespace.name
               value: (kube-system|kube-public|cert-manager)
+    cumulativetodelta:
     batch:
-      send_batch_max_size: 100
-      send_batch_size: 10
+      send_batch_max_size: 10000
       timeout: 10s
     resourcedetection:
       detectors: [env, system]
@@ -101,7 +101,7 @@ config:
     pipelines:
       metrics:
         receivers: [kubeletstats]
-        processors: [filter/drop_k8s_namespaces, batch, resourcedetection]
+        processors: [filter/drop_k8s_namespaces, cumulativetodelta, batch, resourcedetection]
         exporters: [otlp/uptrace]
       logs:
         receivers: [filelog]
