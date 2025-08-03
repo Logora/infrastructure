@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: directus/directus
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8055
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls:
+    - hosts:
+        - directus.logora.fr
+      secretName: directus-tls
+  hosts:
+    - host: "directus.logora.fr"
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  limits:
+    memory: "512Mi"
+  requests:
+    memory: "256Mi"
+
+env:
+  DB_CLIENT: "pg"
+  DB_HOST: "your-postgres-host"
+  DB_PORT: "5432"
+  DB_USER: "your-db-user"
+  DB_PASSWORD: "your-db-password"
+  DB_DATABASE: "your-db-name"
+  ADMIN_EMAIL: "admin@example.com"
+  ADMIN_PASSWORD: "your-admin-password"

@@ -1,0 +1,22 @@
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls:
+    - hosts:
+        - directus-staging.logora.fr
+      secretName: directus-staging-tls
+  hosts:
+    - host: "directus-staging.logora.fr"
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  limits:
+    memory: "512Mi"
+  requests:
+    memory: "256Mi"

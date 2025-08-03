@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: directus
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+{{- range .Values.ingress.tls }}
+    - hosts:
+{{- range .hosts }}
+        - {{ . }}
+{{- end }}
+      secretName: {{ .secretName }}
+{{- end }}
+  rules:
+{{- range .Values.ingress.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: directus
+                port:
+                  number: 8055
+{{- end }}

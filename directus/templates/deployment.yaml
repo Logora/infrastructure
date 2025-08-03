@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: directus
+  labels:
+    app: directus
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: directus
+  template:
+    metadata:
+      labels:
+        app: directus
+    spec:
+      containers:
+        - name: directus
+          image: {{ (default (dict "repository" "directus/directus" "tag" "latest") .Values.image).repository }}:{{ (default (dict "repository" "directus/directus" "tag" "latest") .Values.image).tag }}
+          ports:
+            - containerPort: 8055
+          envFrom:
+            - secretRef:
+                name: directus-env
+          resources:
+            limits:
+              memory: {{ .Values.resources.limits.memory | quote }}
+            requests:
+              memory: {{ .Values.resources.requests.memory | quote }}
