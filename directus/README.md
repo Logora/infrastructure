@@ -22,6 +22,11 @@ This folder contains everything needed to deploy Directus on Kubernetes using He
    ```bash
    helm install directus ./ --namespace directus --values values.yaml
    ```
+2. Upgrade the Helm chart with new values:
+   ```bash
+   helm upgrade directus ./ --namespace directus --values values.yaml
+   ```
+   (Use this command whenever you update `values.yaml` or want to apply new configuration changes.)
 
 2. Check the deployment:
    ```bash

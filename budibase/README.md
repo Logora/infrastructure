@@ -44,6 +44,22 @@ kubectl get pods -n budibase
 
 Access Budibase via the exposed service or ingress URL.
 
+## Update the Budibase Helm Chart
+
+To update Budibase to the latest chart version, first update the Helm repository:
+
+```bash
+helm repo update
+```
+
+Then upgrade your deployment:
+
+```bash
+helm upgrade -n budibase budibase budibase/budibase -f values.yaml
+```
+
+This will apply any changes in your `values.yaml` and update Budibase to the latest version available in the chart repository.
+
 ## Uninstall
 
 To remove the OpenTelemetry Collector:

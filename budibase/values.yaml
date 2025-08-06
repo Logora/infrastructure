@@ -1,6 +1,14 @@
 ingress:
   enabled: true
   className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls:
+    - hosts:
+      - budibase.logora.fr
+      secretName: budibase-tls
   hosts:
     - host: "budibase.logora.fr"
       paths:
@@ -16,12 +24,51 @@ couchdb:
   persistentVolume:
     enabled: true
     storageClass: "csi-cinder-high-speed"
+  resources:
+    limits:
+      memory: "512Mi"
+    requests:
+      memory: "256Mi"
 
 services:
   objectStore:
     storageClass: "csi-cinder-high-speed"
+    resources:
+      limits:
+        memory: "256Mi"
+      requests:
+        memory: "128Mi"
+  proxy:
+    resources:
+      limits:
+        memory: "128Mi"
+      requests:
+        memory: "64Mi"
+  apps:
+    resources:
+      limits:
+        memory: "512Mi"
+      requests:
+        memory: "256Mi"
+  worker:
+    resources:
+      limits:
+        memory: "256Mi"
+      requests:
+        memory: "128Mi"
+  automationWorkers:
+    resources:
+      limits:
+        memory: "512Mi"
+      requests:
+        memory: "256Mi"
   redis:
     storageClass: "csi-cinder-high-speed"
     securityContext:
-      runAsUser: 1000
-      fsGroup: 1000
+      runAsUser: 999
+      fsGroup: 999
+    resources:
+      limits:
+        memory: "128Mi"
+      requests:
+        memory: "56Mi"

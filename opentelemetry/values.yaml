@@ -82,11 +82,17 @@ config:
         - key: service.name
           from_attribute: k8s.container.name
           action: upsert
-    attributes/copy_target_to_route:
-      actions:
-        - key: http.route
-          from_attribute: http.target
-          action: upsert
+    tail_sampling:
+      decision_wait: 20s
+      policies:
+        - name: "errors"
+          type: status_code
+          status_code:
+            status_codes: [ERROR]
+        - name: "probabilistic"
+          type: probabilistic
+          probabilistic:
+            sampling_percentage: 10
 
   exporters:
     debug:
@@ -109,16 +115,16 @@ config:
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
-        processors: [attributes/copy_target_to_route, k8sattributes, batch, resourcedetection]
-        exporters: [otlp/uptrace, debug]
+        processors: [k8sattributes, batch, resourcedetection, tail_sampling]
+        exporters: [otlp/uptrace]
 
 resources:
   limits:
     cpu: 1000m
-    memory: 512Mi
+    memory: 256Mi
   requests:
     cpu: 500m
-    memory: 256Mi
+    memory: 128Mi
 
 serviceAccount:
   create: true
