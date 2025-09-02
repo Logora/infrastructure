@@ -1,0 +1,15 @@
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  hosts: []
+  tls: []
+
+resources:
+  limits:
+    memory: "512Mi"
+  requests:
+    memory: "256Mi"
+
+nameOverride: ""
+fullnameOverride: ""
