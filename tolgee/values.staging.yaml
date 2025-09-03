@@ -1,0 +1,22 @@
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls:
+    - hosts:
+        - tolgee-staging.logora.fr
+      secretName: tolgee-staging-tls
+  hosts:
+    - host: "tolgee-staging.logora.fr"
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  limits:
+    memory: "512Mi"
+  requests:
+    memory: "256Mi"
