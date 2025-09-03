@@ -5,7 +5,7 @@ This folder contains everything needed to deploy Tolgee on Kubernetes using Helm
 ## Prerequisites
 - Kubernetes cluster
 - Helm installed
-- A PostgreSQL database accessible from the cluster
+- Storage class `csi-cinder-high-speed` available in your cluster (for PostgreSQL persistent volumes)
 
 ## About Tolgee
 
@@ -53,12 +53,15 @@ envFrom:
 
 The following environment variables must be configured in your `.env` file:
 
-### Database Configuration (Required)
-- `TOLGEE_POSTGRES_HOST`: PostgreSQL host
-- `TOLGEE_POSTGRES_PORT`: PostgreSQL port (default: 5432)
-- `TOLGEE_POSTGRES_USER`: Database username
-- `TOLGEE_POSTGRES_PASSWORD`: Database password
-- `TOLGEE_POSTGRES_DATABASE`: Database name
+### Database Configuration (Included)
+This deployment includes a PostgreSQL database as a dependency. The database configuration is automatically handled:
+- `TOLGEE_POSTGRES_HOST`: Set to `tolgee-postgresql` (internal service)
+- `TOLGEE_POSTGRES_PORT`: Set to `5432`
+- `TOLGEE_POSTGRES_USER`: Set to `tolgee`
+- `TOLGEE_POSTGRES_PASSWORD`: Environment-specific password
+- `TOLGEE_POSTGRES_DATABASE`: Set to `tolgee`
+
+To use an external database instead, set `postgresql.enabled: false` in your values file.
 
 ### Authentication (Required)
 - `TOLGEE_JWT_SECRET`: JWT secret key for authentication (generate a random string)
@@ -93,10 +96,12 @@ helm install tolgee ./ --namespace tolgee-prod --values values.prod.yaml
 Access at: `https://tolgee.logora.fr`
 
 ## Notes
-- Make sure your PostgreSQL database is reachable from the cluster.
+- PostgreSQL database is included as a dependency with persistent storage using `csi-cinder-high-speed` storage class.
+- Database data is persisted with an 8Gi volume that survives pod restarts.
 - TLS/SSL is configured via cert-manager and Let's Encrypt in the provided ingress.
 - The deployment includes health checks for both liveness and readiness probes.
-- Resource limits are configured to use 256Mi request / 512Mi limit for memory.
+- Resource limits are configured to use 256Mi request / 512Mi limit for memory for both Tolgee and PostgreSQL.
+- To disable the included PostgreSQL and use an external database, set `postgresql.enabled: false` in your values file.
 - For advanced configuration, see the [Tolgee documentation](https://tolgee.io/platform/self_hosting/configuration).
 
 ## Troubleshooting

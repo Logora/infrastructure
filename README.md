@@ -32,10 +32,10 @@ Observability and telemetry collection for monitoring and tracing.
 
 ### [Tolgee](./tolgee/)
 Developer-friendly localization platform for managing translations.
-- **Deployment**: Custom Helm chart
+- **Deployment**: Custom Helm chart with included PostgreSQL database
 - **Domain**: tolgee.logora.fr / tolgee-staging.logora.fr
-- **Database**: PostgreSQL (external)
-- **Features**: Multi-environment support (staging/prod)
+- **Database**: PostgreSQL (included as Helm dependency)
+- **Features**: Multi-environment support (staging/prod), persistent database storage
 
 ## Common Infrastructure Patterns
 
@@ -65,7 +65,7 @@ Before deploying any application, ensure you have:
 3. **kubectl**: Configured to connect to your cluster
 4. **nginx-ingress-controller**: Installed in your cluster
 5. **cert-manager**: Installed for automatic TLS certificate management
-6. **External Databases**: PostgreSQL instances for applications that require them
+6. **Database Management**: PostgreSQL instances (external for Directus/Metabase, included for Tolgee)
 
 ## General Deployment Process
 

@@ -3,4 +3,8 @@ name: tolgee
 version: 0.1.0
 description: A Helm chart for deploying Tolgee on Kubernetes
 
-# This is a minimal Chart.yaml for Helm deployment
+dependencies:
+  - name: postgresql
+    version: ~16.7.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
