@@ -13,3 +13,21 @@ resources:
 
 nameOverride: ""
 fullnameOverride: ""
+
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "postgres"
+    username: "tolgee"
+    password: "tolgee"
+    database: "tolgee"
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "csi-cinder-high-speed"
+      size: 8Gi
+    resources:
+      limits:
+        memory: "512Mi"
+      requests:
+        memory: "256Mi"
