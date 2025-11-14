@@ -1,4 +1,4 @@
-mode: deployment
+mode: daemonset
 
 image:
   repository: otel/opentelemetry-collector-contrib
@@ -13,18 +13,35 @@ config:
           endpoint: 0.0.0.0:4317
         http:
           endpoint: 0.0.0.0:4318
-    k8s_cluster:
-      auth_type: serviceAccount
-      collection_interval: 10s
-      node_conditions_to_report:
-        - Ready
-        - MemoryPressure
-        - DiskPressure
-      allocatable_types_to_report:
-        - cpu
-        - memory
-        - storage
-        - ephemeral-storage
+    kubeletstats:
+      collection_interval: 15s
+      auth_type: "serviceAccount"
+      endpoint: "https://${K8S_NODE_IP}:10250"
+      insecure_skip_verify: true
+      metric_groups:
+        - pod
+        - node
+        - container
+    filelog:
+      include:
+        - /var/log/pods/*/*/*.log
+      exclude:
+        - /var/log/pods/monitoring_*/*/*.log
+        - /var/log/pods/kube-system_*/*/*.log
+        - /var/log/pods/kube-public_*/*/*.log
+        - /var/log/pods/kubernetes-dashboard_*/*/*.log
+        - /var/log/pods/ingress-nginx_*/*/*.log
+        - /var/log/pods/cert-manager_*/*/*.log
+      start_at: beginning
+      include_file_path: true
+      operators:
+        - type: container
+        - type: json_parser
+          parse_from: body
+          timestamp:
+            parse_from: attributes.time
+            layout: 'ms'
+            layout_type: epoch
 
   processors:
     filter/drop_k8s_namespaces:
@@ -89,13 +106,13 @@ config:
   service:
     pipelines:
       metrics:
-        receivers: [k8s_cluster]
-        processors: [batch, resourcedetection]
-        exporters: [debug, otlp/uptrace]
-      logs/entity_events:
-        receivers: [k8s_cluster]
-        processors: [batch, resourcedetection]
-        exporters: [debug, otlp/uptrace]
+        receivers: [kubeletstats]
+        processors: [filter/drop_k8s_namespaces, cumulativetodelta, batch, resourcedetection]
+        exporters: [otlp/uptrace]
+      logs:
+        receivers: [filelog]
+        processors: [k8sattributes, attributes/set_service_name, batch, resourcedetection]
+        exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
         processors: [k8sattributes, batch, resourcedetection, tail_sampling]
@@ -114,11 +131,26 @@ serviceAccount:
   name: otel-collector
 
 extraEnvs:
+  - name: K8S_NODE_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
   - name: UPTRACE_DSN
     valueFrom:
       secretKeyRef:
         name: otel-collector-secrets
         key: UPTRACE_DSN
+
+extraVolumes:
+  - name: varlogpods
+    hostPath:
+      path: /var/log/pods
+      type: Directory
+
+extraVolumeMounts:
+  - name: varlogpods
+    mountPath: /var/log/pods
+    readOnly: true
 
 service:
   enabled: true
