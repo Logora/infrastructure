@@ -51,7 +51,7 @@ config:
           resource_attributes:
             - key: k8s.namespace.name
               value: (kube-system|kube-public|cert-manager)
-    cumulativetodelta:
+    cumulativetodelta: {}
     batch:
       send_batch_max_size: 10000
       timeout: 10s
