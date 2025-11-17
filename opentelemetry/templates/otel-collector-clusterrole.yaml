@@ -13,6 +13,8 @@ rules:
   - namespaces/status
   - nodes
   - nodes/spec
+  - nodes/stats
+  - nodes/proxy
   - pods
   - pods/status
   - replicationcontrollers
