@@ -3,7 +3,9 @@ mode: daemonset
 image:
   repository: otel/opentelemetry-collector-contrib
   pullPolicy: IfNotPresent
-  tag: "latest"
+  # Pinned to the chart's appVersion. "latest" + IfNotPresent led to nodes
+  # running different collector versions depending on when they pulled.
+  tag: "0.139.0"
 
 config:
   receivers:
@@ -32,11 +34,17 @@ config:
         - /var/log/pods/kubernetes-dashboard_*/*/*.log
         - /var/log/pods/ingress-nginx_*/*/*.log
         - /var/log/pods/cert-manager_*/*/*.log
-      start_at: beginning
+      # "beginning" made every restart re-ingest the node's full log backlog,
+      # blowing past the memory limit and crashlooping the collector.
+      start_at: end
       include_file_path: true
       operators:
         - type: container
+        # Only parse JSON-shaped lines; previously the parser errored on every
+        # plain-text log line and DROPPED it (failed to write entry).
         - type: json_parser
+          if: 'body matches "^\\{"'
+          on_error: send_quiet
           parse_from: body
           timestamp:
             parse_from: attributes.time
@@ -107,27 +115,42 @@ config:
     pipelines:
       metrics:
         receivers: [kubeletstats]
-        processors: [filter/drop_k8s_namespaces, cumulativetodelta, batch, resourcedetection]
+        processors: [memory_limiter, filter/drop_k8s_namespaces, cumulativetodelta, batch, resourcedetection]
         exporters: [otlp/uptrace]
       logs:
         receivers: [filelog]
-        processors: [k8sattributes, attributes/set_service_name, batch, resourcedetection]
+        processors: [memory_limiter, k8sattributes, attributes/set_service_name, batch, resourcedetection]
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
-        processors: [k8sattributes, batch, resourcedetection, tail_sampling]
+        processors: [memory_limiter, k8sattributes, batch, resourcedetection, tail_sampling]
         exporters: [otlp/uptrace]
 
 resources:
   limits:
     cpu: 1000m
-    memory: 256Mi
+    memory: 512Mi
   requests:
-    cpu: 500m
-    memory: 128Mi
+    cpu: 250m
+    memory: 256Mi
+
+# Give the collector time to start before the kubelet starts probing :13133.
+# The previous zero-delay probes killed pods that were still initializing.
+livenessProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+readinessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
 
 serviceAccount:
-  create: true
+  # The service account is created by the cluster collector release (values.yaml);
+  # this release reuses it. create: true here would make both Helm releases fight
+  # over the same ServiceAccount.
+  create: false
   name: otel-collector
 
 extraEnvs:
@@ -151,6 +174,12 @@ extraVolumeMounts:
   - name: varlogpods
     mountPath: /var/log/pods
     readOnly: true
+
+tolerations:
+  - key: "role"
+    operator: "Equal"
+    value: "meilisearch"
+    effect: "NoSchedule"
 
 service:
   enabled: true

@@ -3,7 +3,8 @@ mode: deployment
 image:
   repository: otel/opentelemetry-collector-contrib
   pullPolicy: IfNotPresent
-  tag: "latest"
+  # Pinned to the chart's appVersion (avoid per-node version drift with "latest")
+  tag: "0.139.0"
 
 config:
   receivers:
@@ -25,6 +26,33 @@ config:
         - memory
         - storage
         - ephemeral-storage
+    # Meilisearch exposes Prometheus metrics on /metrics (behind an API key
+    # with the metrics.get action; MEILI_EXPERIMENTAL_ENABLE_METRICS=true).
+    # Gives per-index document counts, HTTP request latency/status codes and
+    # task queue depth - used to detect empty/partial search indexes.
+    prometheus/meilisearch:
+      config:
+        scrape_configs:
+          - job_name: meilisearch-production
+            scrape_interval: 30s
+            metrics_path: /metrics
+            authorization:
+              type: Bearer
+              credentials: ${env:MEILISEARCH_PROD_METRICS_KEY}
+            static_configs:
+              - targets: ["meilisearch.production.svc.cluster.local:7700"]
+                labels:
+                  deployment_environment: production
+          - job_name: meilisearch-staging
+            scrape_interval: 60s
+            metrics_path: /metrics
+            authorization:
+              type: Bearer
+              credentials: ${env:MEILISEARCH_STAGING_METRICS_KEY}
+            static_configs:
+              - targets: ["meilisearch.staging.svc.cluster.local:7700"]
+                labels:
+                  deployment_environment: staging
 
   processors:
     filter/drop_k8s_namespaces:
@@ -96,6 +124,10 @@ config:
         receivers: [k8s_cluster]
         processors: [batch, resourcedetection]
         exporters: [debug, otlp/uptrace]
+      metrics/meilisearch:
+        receivers: [prometheus/meilisearch]
+        processors: [cumulativetodelta, batch, resourcedetection]
+        exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
         processors: [k8sattributes, batch, resourcedetection, tail_sampling]
@@ -119,6 +151,16 @@ extraEnvs:
       secretKeyRef:
         name: otel-collector-secrets
         key: UPTRACE_DSN
+  - name: MEILISEARCH_PROD_METRICS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: otel-collector-secrets
+        key: MEILISEARCH_PROD_METRICS_KEY
+  - name: MEILISEARCH_STAGING_METRICS_KEY
+    valueFrom:
+      secretKeyRef:
+        name: otel-collector-secrets
+        key: MEILISEARCH_STAGING_METRICS_KEY
 
 service:
   enabled: true
