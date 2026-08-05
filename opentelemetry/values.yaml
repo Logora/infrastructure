@@ -14,45 +14,36 @@ config:
           endpoint: 0.0.0.0:4317
         http:
           endpoint: 0.0.0.0:4318
-    k8s_cluster:
-      auth_type: serviceAccount
-      collection_interval: 10s
-      node_conditions_to_report:
-        - Ready
-        - MemoryPressure
-        - DiskPressure
-      allocatable_types_to_report:
-        - cpu
-        - memory
-        - storage
-        - ephemeral-storage
-    # Meilisearch exposes Prometheus metrics on /metrics (behind an API key
-    # with the metrics.get action; MEILI_EXPERIMENTAL_ENABLE_METRICS=true).
-    # Gives per-index document counts, HTTP request latency/status codes and
-    # task queue depth - used to detect empty/partial search indexes.
-    prometheus/meilisearch:
-      config:
-        scrape_configs:
-          - job_name: meilisearch-production
-            scrape_interval: 30s
-            metrics_path: /metrics
-            authorization:
-              type: Bearer
-              credentials: ${env:MEILISEARCH_PROD_METRICS_KEY}
-            static_configs:
-              - targets: ["meilisearch.production.svc.cluster.local:7700"]
-                labels:
-                  deployment_environment: production
-          - job_name: meilisearch-staging
-            scrape_interval: 60s
-            metrics_path: /metrics
-            authorization:
-              type: Bearer
-              credentials: ${env:MEILISEARCH_STAGING_METRICS_KEY}
-            static_configs:
-              - targets: ["meilisearch.staging.svc.cluster.local:7700"]
-                labels:
-                  deployment_environment: staging
+    kubeletstats:
+      collection_interval: 15s
+      auth_type: "serviceAccount"
+      endpoint: "https://${K8S_NODE_IP}:10250"
+      insecure_skip_verify: true
+      metric_groups:
+        - pod
+        - node
+        - container
+    filelog:
+      include:
+        - /var/log/pods/*/*/*.log
+      exclude:
+        - /var/log/pods/monitoring_*/*/*.log
+        - /var/log/pods/kube-system_*/*/*.log
+        - /var/log/pods/kube-public_*/*/*.log
+        - /var/log/pods/kubernetes-dashboard_*/*/*.log
+        - /var/log/pods/ingress-nginx_*/*/*.log
+        - /var/log/pods/cert-manager_*/*/*.log
+        - /var/log/pods/metabase_*/*/*.log
+      start_at: beginning
+      include_file_path: true
+      operators:
+        - type: container
+        - type: json_parser
+          parse_from: body
+          timestamp:
+            parse_from: attributes.time
+            layout: 'ms'
+            layout_type: epoch
 
   processors:
     filter/drop_k8s_namespaces:
@@ -130,7 +121,7 @@ config:
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
-        processors: [k8sattributes, batch, resourcedetection, tail_sampling]
+        processors: [k8sattributes, resourcedetection, tail_sampling, batch]
         exporters: [otlp/uptrace]
 
 resources:
