@@ -1,0 +1,36 @@
+replicaCount: 1
+
+image:
+  repository: directus/directus
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Name of the Kubernetes Secret (created from an .env file) mounted via envFrom.
+envFromSecret: directus-env
+
+service:
+  type: ClusterIP
+  port: 8055
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls:
+    - hosts:
+        - directus.example.com
+      secretName: directus-tls
+  hosts:
+    - host: "directus.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  limits:
+    memory: "512Mi"
+  requests:
+    memory: "256Mi"

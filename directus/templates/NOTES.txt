@@ -1,0 +1,13 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.hosts }}
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app=directus" -o jsonpath="{.items[0].metadata.name}")
+  echo "Visit http://127.0.0.1:8055 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8055:8055
+{{- end }}
+
+2. The Directus admin is configured via the ADMIN_EMAIL / ADMIN_PASSWORD
+   variables stored in the Kubernetes secret (envFromSecret).

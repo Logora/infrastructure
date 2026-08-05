@@ -21,7 +21,7 @@ spec:
             - containerPort: 8055
           envFrom:
             - secretRef:
-                name: directus-env
+                name: {{ .Values.envFromSecret | default "directus-env" }}
           resources:
             limits:
               memory: {{ .Values.resources.limits.memory | quote }}

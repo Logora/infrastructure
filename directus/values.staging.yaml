@@ -7,10 +7,10 @@ ingress:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
   tls:
     - hosts:
-        - directus-staging.logora.fr
+        - directus-staging.openmoderation.com
       secretName: directus-staging-tls
   hosts:
-    - host: "directus-staging.logora.fr"
+    - host: "directus-staging.openmoderation.com"
       paths:
         - path: /
           pathType: Prefix

@@ -3,8 +3,7 @@ mode: deployment
 image:
   repository: otel/opentelemetry-collector-contrib
   pullPolicy: IfNotPresent
-  # Pinned to the chart's appVersion (avoid per-node version drift with "latest")
-  tag: "0.139.0"
+  tag: "0.149.0"
 
 config:
   receivers:
@@ -38,12 +37,15 @@ config:
       include_file_path: true
       operators:
         - type: container
+          format: containerd
+          on_error: send
         - type: json_parser
           parse_from: body
+          on_error: send
           timestamp:
             parse_from: attributes.time
-            layout: 'ms'
-            layout_type: epoch
+            layout_type: strptime
+            layout: '%Y-%m-%dT%H:%M:%S.%fZ'
 
   processors:
     filter/drop_k8s_namespaces:
@@ -79,8 +81,8 @@ config:
             name: k8s.pod.uid
         - sources:
           - from: connection
-    attributes/set_service_name:
-      actions:
+    resource/set_service_name:
+      attributes:
         - key: service.name
           from_attribute: k8s.container.name
           action: upsert
@@ -108,16 +110,12 @@ config:
   service:
     pipelines:
       metrics:
-        receivers: [k8s_cluster]
-        processors: [batch, resourcedetection]
-        exporters: [debug, otlp/uptrace]
-      logs/entity_events:
-        receivers: [k8s_cluster]
-        processors: [batch, resourcedetection]
-        exporters: [debug, otlp/uptrace]
-      metrics/meilisearch:
-        receivers: [prometheus/meilisearch]
-        processors: [cumulativetodelta, batch, resourcedetection]
+        receivers: [kubeletstats]
+        processors: [filter/drop_k8s_namespaces, cumulativetodelta, batch, resourcedetection]
+        exporters: [otlp/uptrace]
+      logs:
+        receivers: [filelog]
+        processors: [k8sattributes, resource/set_service_name, batch, resourcedetection]
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
@@ -131,6 +129,19 @@ resources:
   requests:
     cpu: 500m
     memory: 128Mi
+
+clusterRole:
+  create: true
+  rules:
+    - apiGroups: ["apps"]
+      resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["extensions"]
+      resources: ["daemonsets", "deployments", "replicasets"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: ["batch"]
+      resources: ["jobs", "cronjobs"]
+      verbs: ["get", "list", "watch"]
 
 serviceAccount:
   create: true

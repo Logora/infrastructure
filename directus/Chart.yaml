@@ -1,6 +1,7 @@
 apiVersion: v2
 name: directus
+description: A Helm chart for deploying Directus (headless CMS) on Kubernetes
+type: application
 version: 0.1.0
-description: A Helm chart for deploying Directus on Kubernetes
-
-# This is a minimal Chart.yaml for Helm deployment
+appVersion: "11.6.1"
+icon: https://directus.io/favicon.ico
