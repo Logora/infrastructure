@@ -20,13 +20,14 @@ spec:
           args:
             - --provider=github
             - --github-org=logora
-            - --redirect-url=https://openhands.logora.fr/oauth2/callback
+            - --redirect-url=https://agent.logora.com/oauth2/callback
             - --cookie-secure=true
             - --cookie-name=_openhands_oauth
             - --http-address=0.0.0.0:4180
             - --email-domain=*
             - --upstream=static://202
-            - --whitelist-domain=openhands.logora.fr
+            - --whitelist-domain=agent.logora.com
+            - --scope=read:org,user:email
             - --pass-access-token=false
             - --set-xauthrequest=true
           env:

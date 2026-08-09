@@ -6,7 +6,7 @@
 # There is no published Helm repo — install by cloning the repo and using
 # the local chart path (see README.md).
 #
-# This instance is exposed at openhands.logora.fr and protected in front
+# This instance is exposed at agent.logora.com and protected in front
 # by oauth2-proxy (GitHub org "logora") — see ./oauth2-proxy/.
 
 # ── Persistence ─────────────────────────────────────────────────────────────
@@ -41,15 +41,15 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/auth-url: "http://openhands-oauth2-proxy.openhands.svc.cluster.local:4180/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-signin: "https://openhands.logora.fr/oauth2/start?rd=$escaped_request_uri"
+    nginx.ingress.kubernetes.io/auth-signin: "https://agent.logora.com/oauth2/start?rd=$escaped_request_uri"
   hosts:
-    - host: openhands.logora.fr
+    - host: agent.logora.com
       paths:
         - path: /
           pathType: Prefix
   tls:
     - hosts:
-        - openhands.logora.fr
+        - agent.logora.com
       secretName: openhands-tls
 
 # ── LLM configuration (OpenRouter) ──────────────────────────────────────────

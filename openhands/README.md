@@ -14,7 +14,7 @@ adapt, not to copy blindly.
 
 ```
 Internet
-   │  https://openhands.logora.fr
+   │  https://agent.logora.com
    ▼
 nginx Ingress (TLS via cert-manager)
    │  auth_url / auth_signin (auth_request)
@@ -51,8 +51,8 @@ Agent Canvas (StatefulSet, PVC for persistent state)
 
 1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**.
 2. Set:
-   - **Homepage URL**: `https://openhands.logora.fr`
-   - **Authorization callback URL**: `https://openhands.logora.fr/oauth2/callback`
+   - **Homepage URL**: `https://agent.logora.com`
+   - **Authorization callback URL**: `https://agent.logora.com/oauth2/callback`
 3. Copy the **Client ID** and **Client Secret** into your local `.env`
    (see `.env.example`).
 4. Membership is restricted to the **`logora`** org via `--github-org=logora`
@@ -144,7 +144,7 @@ kubectl -n openhands get pods -l app=openhands-oauth2-proxy
 kubectl -n openhands get pods -o wide
 ```
 
-Browse to `https://openhands.logora.fr` — you should be redirected to GitHub
+Browse to `https://agent.logora.com` — you should be redirected to GitHub
 login and only members of the `logora` org get through.
 
 ## LLM model

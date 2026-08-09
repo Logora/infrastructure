@@ -10,10 +10,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - openhands.logora.fr
+        - agent.logora.com
       secretName: openhands-tls
   rules:
-    - host: openhands.logora.fr
+    - host: agent.logora.com
       http:
         paths:
           - path: /oauth2

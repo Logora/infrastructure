@@ -27,7 +27,7 @@ Business intelligence and analytics platform.
 ### [OpenHands](./openhands/)
 AI coding agent platform (Agent Canvas) for self-hosted development automation.
 - **Deployment**: Official Helm chart (`helm/agent-canvas` from the OpenHands repo)
-- **Domain**: openhands.logora.fr
+- **Domain**: agent.logora.com
 - **Auth**: oauth2-proxy fronting with GitHub (org "logora")
 - **Storage**: PVC dedicated node (block storage)
 - **LLM**: OpenRouter
