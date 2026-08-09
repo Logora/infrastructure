@@ -1,0 +1,104 @@
+# Values for the official Agent Canvas Helm chart (OpenHands).
+#
+# Agent Canvas is the self-hosted, single-tenant all-in-one OpenHands
+# deployment: browser UI + agent-server + automations in one StatefulSet.
+# Chart source: https://github.com/OpenHands/OpenHands (helm/agent-canvas)
+# There is no published Helm repo — install by cloning the repo and using
+# the local chart path (see README.md).
+#
+# This instance is exposed at openhands.logora.fr and protected in front
+# by oauth2-proxy (GitHub org "logora") — see ./oauth2-proxy/.
+
+# ── Persistence ─────────────────────────────────────────────────────────────
+# State (conversations, secrets, repos, generated files) lives on a block
+# volume. Keep the drives network-attached so state survives node
+# replacement. storageClassName must be a ReadWriteOnce-capable block
+# StorageClass present in your cluster (update to match your provider).
+persistence:
+  enabled: true
+  storageClassName: csi-cinder-high-speed
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  mounts:
+    - mountPath: /home/openhands/.openhands
+      subPath: openhands
+    - mountPath: /home/openhands/workspace
+      subPath: workspace
+
+# ── Ingress ─────────────────────────────────────────────────────────────────
+# TLS auto-provisioned by cert-manager (Let's Encrypt). Long WebSocket
+# timeouts are required for streaming agent events. The auth annotations
+# route every request through oauth2-proxy before reaching Agent Canvas.
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/auth-url: "http://openhands-oauth2-proxy.openhands.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://openhands.logora.fr/oauth2/start?rd=$escaped_request_uri"
+  hosts:
+    - host: openhands.logora.fr
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - openhands.logora.fr
+      secretName: openhands-tls
+
+# ── LLM configuration (OpenRouter) ──────────────────────────────────────────
+# The API key is read from a Secret (openhands-llm) created out of band —
+# never commit it. Create with:
+#   kubectl create secret generic openhands-llm \
+#     --namespace openhands --from-env-file=.env
+config:
+  extraEnv:
+    - name: LLM_MODEL
+      value: "openrouter/anthropic/claude-opus-5"
+    - name: LLM_BASE_URL
+      value: "https://openrouter.ai/api/v1"
+    - name: LLM_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openhands-llm
+          key: LLM_API_KEY
+
+# ── Dedicated node ──────────────────────────────────────────────────────────
+# OpenHands pins to a dedicated node so agent builds/executions cannot
+# evict (or be evicted by) the other applications on the cluster. The node
+# is labelled and tainted (openhands=true:NoSchedule). Keep the taint/label
+# persistent via your provider's node-pool template where supported, or it
+# must be reapplied after the node is replaced (see README).
+nodeSelector:
+  node-role.openhands.infra: "true"
+tolerations:
+  - key: openhands
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# ── RBAC ────────────────────────────────────────────────────────────────────
+# No in-cluster permissions for the agent by default. Enable scoped access
+# only if the agent must deploy into the cluster itself.
+rbac:
+  enabled: false
+  namespaces: []
+  clusterAdmin: false
+
+# ── Resources ───────────────────────────────────────────────────────────────
+# Pod limits sized for the all-in-one server + in-pod code execution
+# (shell commands, compiles, tests). Tune to observed usage with
+# `kubectl top pods`.
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 6Gi

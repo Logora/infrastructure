@@ -24,6 +24,14 @@ Business intelligence and analytics platform.
 - **Domain**: data.logora.com
 - **Database**: PostgreSQL (external)
 
+### [OpenHands](./openhands/)
+AI coding agent platform (Agent Canvas) for self-hosted development automation.
+- **Deployment**: Official Helm chart (`helm/agent-canvas` from the OpenHands repo)
+- **Domain**: openhands.logora.fr
+- **Auth**: oauth2-proxy fronting with GitHub (org "logora")
+- **Storage**: PVC dedicated node (block storage)
+- **LLM**: OpenRouter
+
 ### [OpenTelemetry](./opentelemetry/)
 Observability and telemetry collection for monitoring and tracing.
 - **Deployment**: Official Helm chart
