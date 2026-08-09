@@ -1,0 +1,59 @@
+# OpenHands auto-PR on @mention
+#
+# Trigger: when the agent bot is @mentioned in an issue or pull-request
+# comment on this repository, check out the repo and have the agent produce
+# and open a pull request addressing the referenced issue/PR.
+#
+# Install this file into a target repo at:
+#   .github/workflows/auto-pr-on-mention.yml
+#
+# The bot username below must match what your team @mentions to summon it.
+name: OpenHands auto-PR on mention
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  openhands:
+    if: |
+      (github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment') &&
+      (contains(github.event.comment.body, '@openhands') ||
+       contains(github.event.comment.body, '/openhands'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # TODO(bot): replace the placeholder below with your preferred way of
+      # invoking the OpenHands agent against this issue/PR (see the official
+      # OpenHands GitHub Action or the headless CLI/SDK). It must:
+      #   - target the issue_number below,
+      #   - authenticate with GITHUB_TOKEN (or a PAT with repo scope),
+      #   - push a branch and open a PR.
+      - name: Context
+        id: ctx
+        run: |
+          echo "issue=${{ github.event.issue && github.event.issue.number || github.event.pull_request && github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          echo "comment_body=${{ github.event.comment.body }}" >> "$GITHUB_OUTPUT"
+
+      - name: Run OpenHands agent (placeholder)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.ctx.outputs.issue }}
+        run: |
+          echo "Agent triggered by mention on issue/PR #${ISSUE_NUMBER}"
+          # Example (fill in with the real invocation):
+          #   openhands \
+          #     --task "Implement the request described in issue #${ISSUE_NUMBER}" \
+          #     --github-token "$GITHUB_TOKEN" \
+          #     --head-branch "openhands/${ISSUE_NUMBER}"

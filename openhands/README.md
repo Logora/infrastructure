@@ -168,6 +168,51 @@ To configure purely via environment instead of the UI, uncomment the
 `config.extraEnv` block at the top of `values.yaml` (it references the
 `openhands-llm` secret) and run the `helm upgrade` above.
 
+## GitHub integration & PR automation
+
+### GitHub token (required)
+
+OpenHands (OSS) authenticates to GitHub via a Personal Access Token. Add it
+in the UI: **Settings → Integrations → GitHub Token**.
+
+1. Create a **fine-grained PAT** (Developer settings → Personal access
+   tokens → Fine-grained tokens), owned by the `Logora` org.
+2. Scope it to the repositories you want.
+3. Permissions (all "Read and write" unless noted):
+   - Contents (create branches / commits / push)
+   - Pull requests (open/manage PRs)
+   - Issues (comment on tickets)
+   - Metadata (read-only, mandatory)
+4. If the org enforces it, click **Enable SSO** next to the org.
+5. Paste the token in **Settings → Integrations → GitHub Token** and save.
+
+OpenHands exports this as `GITHUB_TOKEN` into the agent shell, so `git push`,
+`gh pr`, comments and PRs all work from the workspace.
+
+### Auto-PR on @mention (issues / PRs)
+
+Trigger: when the bot is @mentioned in a comment on an **issue or a
+pull-request**, the agent works on it and opens a PR. The most robust
+self-contained approach for OSS is a **repository GitHub Actions workflow**
+(runs where the code lives, no need to expose a webhook to Agent Canvas).
+
+A ready-to-adapt template is provided in
+[`github-action/auto-pr-on-mention.yml`](./github-action/auto-pr-on-mention.yml).
+To enable it in a repository:
+
+1. Copy the file to `<repo>/.github/workflows/auto-pr-on-mention.yml`.
+2. Make sure the workflow's `@mention` (e.g. `@openhands` / `/openhands`)
+   matches how your team summons the agent.
+3. Complete the agent invocation step in the workflow (the placeholder) to
+   actually run the agent against the referenced issue/PR and open a PR.
+4. If the repository uses a service account bot to push, create a token with
+   `repo` scope and store it as an Actions secret instead of relying on the
+   default `GITHUB_TOKEN`.
+
+The token from [Settings → Integrations → GitHub Token](#github-token-required)
+is what the agent itself uses inside Agent Canvas to push/PR from its
+conversations.
+
 ## Uninstall
 
 ```bash
