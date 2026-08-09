@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openhands-oauth2-proxy
+  namespace: openhands
   labels:
     app: openhands-oauth2-proxy
 spec:
