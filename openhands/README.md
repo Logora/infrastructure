@@ -156,10 +156,13 @@ Suggested starter (OpenRouter):
 
 - **Provider**: OpenRouter (OpenAI-compatible / LiteLLM)
 - **Base URL**: `https://openrouter.ai/api/v1`
-- **Model**: `openrouter/anthropic/claude-opus-5` (OpenRouter model ID for
-  Claude Opus 5; OpenRouter exposes all models under the `openrouter/<id>`
-  prefix)
+- **Model**: `openrouter/deepseek/deepseek-v4-flash-0731` (OpenRouter model
+  ID for DeepSeek v4 Flash)
 - **API key**: an OpenRouter key `sk-or-…`
+
+For heavier agentic coding you can switch to a stronger model, e.g.
+`openrouter/anthropic/claude-opus-5` (Claude Opus 5), in the UI at any time.
+OpenRouter exposes every model under the `openrouter/<id>` prefix.
 
 To configure purely via environment instead of the UI, uncomment the
 `config.extraEnv` block at the top of `values.yaml` (it references the
