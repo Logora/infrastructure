@@ -7,7 +7,7 @@
 # the local chart path (see README.md).
 #
 # This instance is exposed at agent.logora.com and protected in front
-# by oauth2-proxy (GitHub org "logora") — see ./oauth2-proxy/.
+# by oauth2-proxy (GitHub org "Logora") — see ./oauth2-proxy/.
 
 # ── Persistence ─────────────────────────────────────────────────────────────
 # State (conversations, secrets, repos, generated files) lives on a block
@@ -52,22 +52,22 @@ ingress:
         - agent.logora.com
       secretName: openhands-tls
 
-# ── LLM configuration (OpenRouter) ──────────────────────────────────────────
-# The API key is read from a Secret (openhands-llm) created out of band —
-# never commit it. Create with:
-#   kubectl create secret generic openhands-llm \
-#     --namespace openhands --from-env-file=.env
-config:
-  extraEnv:
-    - name: LLM_MODEL
-      value: "openrouter/anthropic/claude-opus-5"
-    - name: LLM_BASE_URL
-      value: "https://openrouter.ai/api/v1"
-    - name: LLM_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: openhands-llm
-          key: LLM_API_KEY
+# ── LLM configuration ────────────────────────────────────────────────────────
+# The LLM is configured in the Agent Canvas UI (Settings → LLM), which stores
+# it durably on the PVC (~/.openhands). A Secret (openhands-llm) can be used
+# to seed an API key out of band if desired — never commit secrets.
+# Example (env-style, used only if you prefer not to configure in the UI):
+#   config:
+#     extraEnv:
+#       - name: LLM_MODEL
+#         value: "openrouter/anthropic/claude-opus-5"
+#       - name: LLM_BASE_URL
+#         value: "https://openrouter.ai/api/v1"
+#       - name: LLM_API_KEY
+#         valueFrom:
+#           secretKeyRef:
+#             name: openhands-llm
+#             key: LLM_API_KEY
 
 # ── Dedicated node ──────────────────────────────────────────────────────────
 # OpenHands pins to a dedicated node so agent builds/executions cannot

@@ -20,7 +20,7 @@ spec:
           image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
           args:
             - --provider=github
-            - --github-org=logora
+            - --github-org=Logora
             - --redirect-url=https://agent.logora.com/oauth2/callback
             - --cookie-secure=true
             - --cookie-name=_openhands_oauth

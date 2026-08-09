@@ -19,7 +19,7 @@ Internet
 nginx Ingress (TLS via cert-manager)
    │  auth_url / auth_signin (auth_request)
    ▼
-oauth2-proxy ── GitHub OAuth (org "logora") → only org members pass
+oauth2-proxy ── GitHub OAuth (org "Logora") → only org members pass
    │
    ▼
 Agent Canvas (StatefulSet, PVC for persistent state)
@@ -28,7 +28,7 @@ Agent Canvas (StatefulSet, PVC for persistent state)
 - **Agent Canvas**: official Helm chart, deployed as a `StatefulSet` (UI +
   agent-server + automations) with one `PersistentVolumeClaim`.
 - **oauth2-proxy**: GitHub OAuth gateway; only members of the GitHub org
-  `logora` can reach the UI.
+  `Logora` can reach the UI.
 - **Dedicated node**: both workloads are pinned to a dedicated, tainted
   node so agent code execution does not compete with (or get evicted by)
   your other applications.
@@ -55,7 +55,7 @@ Agent Canvas (StatefulSet, PVC for persistent state)
    - **Authorization callback URL**: `https://agent.logora.com/oauth2/callback`
 3. Copy the **Client ID** and **Client Secret** into your local `.env`
    (see `.env.example`).
-4. Membership is restricted to the **`logora`** org via `--github-org=logora`
+4. Membership is restricted to the **`Logora`** org via `--github-org=Logora`
    in `oauth2-proxy/deployment.yaml`. Adjust if you want a different org or
    team.
 
@@ -145,18 +145,25 @@ kubectl -n openhands get pods -o wide
 ```
 
 Browse to `https://agent.logora.com` — you should be redirected to GitHub
-login and only members of the `logora` org get through.
+login and only members of the `Logora` org get through.
 
 ## LLM model
 
-The model is set via `config.extraEnv` in `values.yaml`:
+The LLM is configured in the **Agent Canvas UI** (Settings → LLM), which
+stores it durably on the PVC (`~/.openhands`) and survives restarts/upgrades.
 
-- `LLM_MODEL=openrouter/anthropic/claude-opus-5`
-- `LLM_BASE_URL=https://openrouter.ai/api/v1`
-- `LLM_API_KEY` read from the `openhands-llm` secret
+Suggested starter (OpenRouter):
 
-Change the model at any time by editing `values.yaml` and running the
-`helm upgrade` above.
+- **Provider**: OpenRouter (OpenAI-compatible / LiteLLM)
+- **Base URL**: `https://openrouter.ai/api/v1`
+- **Model**: `openrouter/anthropic/claude-opus-5` (OpenRouter model ID for
+  Claude Opus 5; OpenRouter exposes all models under the `openrouter/<id>`
+  prefix)
+- **API key**: an OpenRouter key `sk-or-…`
+
+To configure purely via environment instead of the UI, uncomment the
+`config.extraEnv` block at the top of `values.yaml` (it references the
+`openhands-llm` secret) and run the `helm upgrade` above.
 
 ## Uninstall
 
@@ -185,7 +192,7 @@ kubectl label node <node-name> node-role.openhands.infra-
   streams. Ensure the read/send timeout annotations (`proxy-read-timeout`,
   `proxy-send-timeout`) are set to at least `3600`.
 - **Auth loop / 401**: check the GitHub OAuth App callback URL matches
-  exactly, and that the requesting user is a member of the `logora` org.
+  exactly, and that the requesting user is a member of the `Logora` org.
   Check oauth2-proxy logs: `kubectl -n openhands logs -l app=openhands-oauth2-proxy`.
 - **Pod stuck Pending**: `kubectl -n openhands describe pod <pod>` — usually
   a missing/unschedulable StorageClass or the dedicated node not having the
