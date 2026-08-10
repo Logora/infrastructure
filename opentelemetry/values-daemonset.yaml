@@ -5,7 +5,7 @@ image:
   pullPolicy: IfNotPresent
   # Pinned to the chart's appVersion. "latest" + IfNotPresent led to nodes
   # running different collector versions depending on when they pulled.
-  tag: "0.139.0"
+  tag: "0.151.0"
 
 config:
   receivers:
@@ -91,10 +91,10 @@ config:
       log_statements:
         - context: log
           statements:
-            - set(attributes["log.trace.id"], attributes["trace_id"])
-            - set(attributes["log.span.id"], attributes["span_id"])
-            - delete_key(attributes, "trace_id")
-            - delete_key(attributes, "span_id")
+            - set(log.attributes["log.trace.id"], log.attributes["trace_id"])
+            - set(log.attributes["log.span.id"], log.attributes["span_id"])
+            - delete_key(log.attributes, "trace_id")
+            - delete_key(log.attributes, "span_id")
     tail_sampling:
       decision_wait: 20s
       policies:
