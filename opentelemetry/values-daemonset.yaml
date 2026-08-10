@@ -46,10 +46,6 @@ config:
           if: 'body matches "^\\{"'
           on_error: send_quiet
           parse_from: body
-          timestamp:
-            parse_from: attributes.time
-            layout: 'ms'
-            layout_type: epoch
 
   processors:
     filter/drop_k8s_namespaces:
