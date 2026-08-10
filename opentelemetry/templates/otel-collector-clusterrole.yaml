@@ -56,10 +56,18 @@ rules:
   - list
   - watch
 - apiGroups:
-    - autoscaling
+  - autoscaling
   resources:
-    - horizontalpodautoscalers
+  - horizontalpodautoscalers
   verbs:
-    - get
-    - list
-    - watch
+  - get
+  - list
+  - watch
+# kubeletstats receiver scraping endpoints on the node kubelet.
+- nonResourceURLs:
+  - /metrics
+  - /stats
+  - /stats/summary
+  - /stats/*
+  verbs:
+  - get
