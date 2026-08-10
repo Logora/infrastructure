@@ -61,6 +61,15 @@ config:
       timeout: 10s
     resourcedetection:
       detectors: [env, system]
+    transform/log_correlation:
+      error_mode: ignore
+      log_statements:
+        - context: log
+          statements:
+            - set(attributes["log.trace.id"], attributes["trace_id"])
+            - set(attributes["log.span.id"], attributes["span_id"])
+            - delete_key(attributes, "trace_id")
+            - delete_key(attributes, "span_id")
     k8sattributes:
       extract:
         metadata:
@@ -115,7 +124,7 @@ config:
         exporters: [otlp/uptrace]
       logs:
         receivers: [filelog]
-        processors: [k8sattributes, resource/set_service_name, batch, resourcedetection]
+        processors: [k8sattributes, resource/set_service_name, transform/log_correlation, batch, resourcedetection]
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]

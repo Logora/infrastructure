@@ -90,6 +90,15 @@ config:
         - key: service.name
           from_attribute: k8s.container.name
           action: upsert
+    transform/log_correlation:
+      error_mode: ignore
+      log_statements:
+        - context: log
+          statements:
+            - set(attributes["log.trace.id"], attributes["trace_id"])
+            - set(attributes["log.span.id"], attributes["span_id"])
+            - delete_key(attributes, "trace_id")
+            - delete_key(attributes, "span_id")
     tail_sampling:
       decision_wait: 20s
       policies:
@@ -119,7 +128,7 @@ config:
         exporters: [otlp/uptrace]
       logs:
         receivers: [filelog]
-        processors: [memory_limiter, k8sattributes, attributes/set_service_name, batch, resourcedetection]
+        processors: [memory_limiter, k8sattributes, attributes/set_service_name, transform/log_correlation, batch, resourcedetection]
         exporters: [otlp/uptrace]
       traces:
         receivers: [otlp]
@@ -147,10 +156,9 @@ readinessProbe:
   timeoutSeconds: 5
 
 serviceAccount:
-  # The service account is created by the cluster collector release (values.yaml);
-  # this release reuses it. create: true here would make both Helm releases fight
-  # over the same ServiceAccount.
-  create: false
+  # The cluster collector release (values.yaml) that used to create this service
+  # account no longer exists. This release now owns and creates it.
+  create: true
   name: otel-collector
 
 extraEnvs:
