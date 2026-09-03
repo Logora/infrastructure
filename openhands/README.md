@@ -1,6 +1,6 @@
 # OpenHands (Agent Canvas) on Kubernetes
 
-This folder contains everything needed to deploy **Agent Canvas** — the
+This folder contains everything needed to deploy **Agent Canvas 1.16.0** — the
 self-hosted, single-tenant OpenHands deployment (web UI + agent-server +
 automations in one all-in-one image) — on Kubernetes, protected in front by
 **oauth2-proxy** authenticating against a **GitHub organization**.
@@ -110,7 +110,8 @@ There is **no published Helm repo** — the chart lives in the OpenHands
 source tree. Clone it and install from the local path:
 
 ```bash
-git clone https://github.com/OpenHands/OpenHands.git
+git clone --branch v1.16.0 --depth 1 \
+  https://github.com/OpenHands/OpenHands.git
 cd OpenHands
 
 helm install agent-canvas ./helm/agent-canvas \
