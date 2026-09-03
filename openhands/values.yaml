@@ -98,7 +98,7 @@ rbac:
 resources:
   requests:
     cpu: 500m
-    memory: 2Gi
+    memory: 1Gi
   limits:
     cpu: "4"
-    memory: 6Gi
+    memory: 5Gi
