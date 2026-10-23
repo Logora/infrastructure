@@ -1,6 +1,6 @@
 # OpenHands (Agent Canvas) on Kubernetes
 
-This folder contains everything needed to deploy **Agent Canvas 1.26.0** — the
+This folder contains everything needed to deploy **Agent Canvas 1.32.0** — the
 self-hosted, single-tenant OpenHands deployment (web UI + agent-server +
 automations in one all-in-one image) — on Kubernetes, protected in front by
 **oauth2-proxy** authenticating against a **GitHub organization**.
@@ -32,6 +32,24 @@ Agent Canvas (StatefulSet, PVC for persistent state)
 - **Dedicated node**: both workloads are pinned to a dedicated, tainted
   node so agent code execution does not compete with (or get evicted by)
   your other applications.
+
+### Automation workspaces and text retention (1.32.0+)
+
+Agent Canvas 1.32.0 (openhands-automation 1.25.x) deletes a run's workspace
+as soon as the run reaches a terminal state, unless the automation has
+`keep_alive=true`. This deployment intentionally leaves `keep_alive` unset:
+automation conversations are **not resumable**, only their text is kept.
+
+The conversation transcript (`~/.openhands/agent-canvas/conversations/<id>/`,
+`meta.json` + `events/*.json`) remains readable in the UI until the
+`Nettoyage horaire conversations inactives` automation deletes it. Its
+`RETENTION_DAYS` constant is the retention knob — it is independent from
+`AUTOMATION_WORKSPACE_RETENTION_SECONDS`.
+
+`openhands-cleanup` and `openhands-cleanup-bash-events` are backstops for
+leftover workspaces/bash events (crashed or non-terminalized runs, and data
+predating 1.32.0). Do not set `keep_alive=true` unless resumable automation
+conversations are explicitly wanted.
 
 ## Prerequisites
 
@@ -110,7 +128,7 @@ There is **no published Helm repo** — the chart lives in the OpenHands
 source tree. Clone it and install from the local path:
 
 ```bash
-git clone --branch v1.26.0 --depth 1 \
+git clone --branch v1.32.0 --depth 1 \
   https://github.com/OpenHands/OpenHands.git
 cd OpenHands
 
@@ -125,6 +143,11 @@ Upgrade later with:
 helm upgrade agent-canvas ./helm/agent-canvas \
   --namespace openhands --values /path/to/openhands/values.yaml
 ```
+
+> **Upgrading to 1.32.0**: back up `~/.openhands/automation/automations.db`
+> (or snapshot the PVC) before the upgrade. Alembic migration 034 is
+> additive; rolling back to 1.31.0 requires restoring the pre-upgrade
+> database because 1.31.0 does not know revision 034.
 
 ### 5. Deploy oauth2-proxy
 
@@ -248,6 +271,51 @@ kubectl label node <node-name> node-role.openhands.infra-
   expected taint/label (see the persistence caveat above).
 - **OOMKill / restarts**: check `kubectl -n openhands top pods` and increase
   `resources.limits.memory` in `values.yaml`.
+- **500 `No space left on device` (`Errno 28`)**: the 20Gi PVC
+  (`data-agent-canvas-0`, shared by `workspace` + `.openhands`) is full.
+  Diagnose and clean without downtime:
+  ```bash
+  kubectl -n openhands exec statefulset/agent-canvas -- df -h /home/openhands/workspace
+  kubectl -n openhands exec statefulset/agent-canvas -- du -h -d 2 /home/openhands/workspace | sort -rh | head
+  kubectl -n openhands exec statefulset/agent-canvas -- du -h -d 2 /home/openhands/.openhands | sort -rh | head
+  ```
+  Usual culprits: cloned test fixtures (e.g. `tests/data_static`, re-clone
+  with sparse-checkout instead), `node_modules` (reinstallable), old
+  `agent-canvas/conversations` / `bash_events`. If usage keeps exceeding
+  ~85%, expand the PVC instead — the StorageClass allows online expansion:
+  bump `persistence.size` in `values.yaml`, `helm upgrade`, then
+  `kubectl -n openhands patch pvc data-agent-canvas-0 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'`.
+- **500 `No space left on device` (`Errno 28`) with free GBs left**: the
+  filesystem is out of **inodes** (`df -i` shows 100% `IUse%`), not bytes.
+  Automation runs used to leave full workdirs in
+  `~/.openhands/workspaces/automation-runs/<run-id>` — these are now purged
+  automatically every hour by the `openhands-cleanup` CronJob (see
+  `./cleanup/`). Policy: only run dirs referenced by NO existing conversation
+  AND inactive 24h are deleted. (Incident 2026-10-14: the former "keep 5
+  newest" policy deleted workdirs of 192 live conversations -> bash
+  FileNotFoundError on resume. Those workdirs are unrecoverable; affected
+  conversations must be restarted. Never go back to recency-only purging.)
+  Manual fallback:
+  ```bash
+  kubectl -n openhands exec statefulset/agent-canvas -- df -i /home/openhands/.openhands
+  kubectl create job --from=cronjob/openhands-cleanup -n openhands openhands-cleanup-manual
+  ```
+  `agent-canvas/bash_events/` (store global des sorties bash, non purgé par le
+  `DELETE` des conversations) est purgé quotidiennement par
+  `openhands-cleanup-bash-events` (corrélation : seuls les command-id non
+  référencés par une conversation existante, +24h — 277k fichiers / ~760 Mo
+  récupérés le 2026-10-14, inodes 71 % → 50 %). Même job, même corrélation
+  pour les workspaces abandonnés (non référencés, inactifs 7j, git propre) —
+  hors `automation-runs` (horaire) et `automation-state` (jamais touché).
+  Attention : les conversations référencent des workspaces aussi dans leurs
+  `events/*.json`, pas seulement `meta.json` (`working_dir`) — toute
+  corrélation meta-only produit des faux orphelins (vécu : 67 faux positifs,
+  sauvés par la garde 7j).
+  Remaining inode hogs (Oct 2026, tous référencés donc conservés) :
+  Secondary cleanup (only if pressure returns): `node_modules` in the
+  cloned workspaces (reinstallable via `pnpm install`) and the duplicated
+  `.pnpm-store` copies (`pnpm store prune`). Never delete
+  `agent-canvas/conversations` without a backup — that is user data.
 
 ## Security notes
 

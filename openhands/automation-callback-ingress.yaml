@@ -1,0 +1,39 @@
+# Ingress dédié aux callbacks de l'automation-service.
+#
+# Contexte : les runs d'automation POSTent leur complétion vers
+# AUTOMATION_BASE_URL (https://agent.logora.com). L'Ingress principal du
+# chart protège tout via oauth2-proxy (cookie GitHub), que le preset
+# automatisé ne possède pas.
+# Cet Ingress expose donc /api/automation/* SANS oauth2-proxy ; l'auth est
+# assurée au niveau service par AUTOMATION_LOCAL_API_KEY (Bearer), que le
+# dispatcher injecte dans les runs via AUTOMATION_CALLBACK_API_KEY.
+# nginx route au préfixe le plus long : /api/automation/* gagne sur / du chart.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openhands-automation-callbacks
+  namespace: openhands
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - agent.logora.com
+      secretName: openhands-tls
+  rules:
+    - host: agent.logora.com
+      http:
+        paths:
+          - path: /api/automation
+            pathType: Prefix
+            backend:
+              service:
+                name: agent-canvas
+                port:
+                  number: 8000

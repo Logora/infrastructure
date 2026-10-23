@@ -1,0 +1,143 @@
+# Scripts de purge profonde Agent Canvas (quotidien, voir cronjob-bash-events.yaml).
+#
+# Contexte :
+# - `agent-canvas/bash_events/` est un store global plat
+#   (<timestamp>_<Kind>_<command-id>) sans ID de conversation dans le nom.
+#   Le `DELETE /api/conversations/{id}` ne supprime que
+#   `conversations/<id>/` → les bash_events des conversations supprimées
+#   s'accumulent.
+# - Pareil pour les workspaces : `meta.json` de chaque conversation contient
+#   son `working_dir` exact ; un workspace non référencé par aucune
+#   conversation existante est orphelin (clones abandonnés, workdirs
+#   `workspace/project/<hash>`).
+#
+# Stratégie (sûre) :
+# - bash_events : command-id non référencé par AUCUNE conversation + fichier
+#   de +24h (garde-fou races d'écriture).
+# - workspaces : top-level sous `~/.openhands/workspaces/` (hors
+#   automation-runs — géré par le CronJob horaire — et automation-state —
+#   état du service, jamais touché) et `~/workspace/project/`, non référencé
+#   + aucune activité depuis 7j + arbre git propre (ou pas un repo).
+#   Les chemins supprimés viennent de l'énumération disque, jamais du JSON.
+# DRY_RUN=1 par défaut : compte sans supprimer.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openhands-cleanup-bash-events
+  namespace: openhands
+  labels:
+    app: openhands-cleanup
+data:
+  local.sh: |
+    #!/bin/sh
+    # Tourne dans le pod CronJob : pilote le nettoyage dans agent-canvas-0.
+    set -u
+    kubectl -n openhands exec -i agent-canvas-0 -- \
+      env DRY_RUN="${DRY_RUN:-1}" sh -s < /scripts/remote.sh
+  remote.sh: |
+    #!/bin/sh
+    # Tourne DANS agent-canvas-0 (stdin via `kubectl exec -i ... sh -s`).
+    set -u
+    BASE=/home/openhands/.openhands/agent-canvas
+    WS1=/home/openhands/.openhands/workspaces
+    WS2=/home/openhands/workspace/project
+    TMP=/tmp/beclean
+    DRY_RUN="${DRY_RUN:-1}"
+
+    cd "$BASE" || { echo "no agent-canvas dir, nothing to do"; exit 0; }
+    mkdir -p "$TMP"
+
+    echo "== 1. references (hashes + working_dirs) depuis les conversations =="
+    [ -d bash_events ] && grep -rhoE '[0-9a-f]{32}' conversations/ 2>/dev/null \
+      | LC_ALL=C sort -u > "$TMP/ref.txt" || : > "$TMP/ref.txt"
+    echo "distinct referenced hashes: $(wc -l < "$TMP/ref.txt")"
+    # Les workspaces sont référencés dans meta.json (working_dir) MAIS AUSSI
+    # dans events/*.json (l'agent opère hors working_dir : clones, builds).
+    # Scanner meta seul produit des faux orphelins -> on scanne tout.
+    grep -rhoE '/home/openhands/(\.openhands/workspaces/|workspace/)[^"\\]*' \
+      conversations/ 2>/dev/null \
+      | LC_ALL=C sort -u > "$TMP/workdirs.txt"
+    echo "distinct workspace paths: $(wc -l < "$TMP/workdirs.txt")"
+    # Normalise vers le top-level sous les deux racines candidates.
+    : > "$TMP/ref_top.txt"
+    while IFS= read -r d; do
+      case "$d" in
+        "$WS1"/*) rest=${d#"$WS1"/}; echo "$WS1/${rest%%/*}" ;;
+        "$WS2"/*) rest=${d#"$WS2"/}; echo "$WS2/${rest%%/*}" ;;
+      esac
+    done < "$TMP/workdirs.txt" | LC_ALL=C sort -u > "$TMP/ref_top.txt"
+
+    if [ -d bash_events ]; then
+    echo "== 2. fichiers bash_events de +24h (command-id = 3e champ) =="
+    find bash_events -maxdepth 1 -type f -mmin +1440 -print 2>/dev/null \
+      | sed 's|^bash_events/||' \
+      | awk -F_ 'NF>=3 && ($2=="BashCommand" || $2=="BashOutput") {print $3"|"$0}' \
+      | LC_ALL=C sort -t'|' -k1,1 > "$TMP/files.txt"
+    echo "candidate files: $(wc -l < "$TMP/files.txt")"
+
+    echo "== 3. bash_events orphelins (command-id non reference) =="
+    LC_ALL=C join -t'|' -o 1.2 -v1 "$TMP/files.txt" "$TMP/ref.txt" \
+      > "$TMP/orphans.txt"
+    N=$(wc -l < "$TMP/orphans.txt")
+    echo "orphan files: $N"
+    if [ "$N" -gt 0 ]; then
+    echo "samples:"; head -n 3 "$TMP/orphans.txt"
+    BYTES=$(sed 's|^|bash_events/|' "$TMP/orphans.txt" \
+      | tr '\n' '\0' | xargs -0 stat -c%s 2>/dev/null \
+      | awk '{s+=$1} END {print s+0}')
+    echo "estimated bytes: $BYTES"
+    if [ "$DRY_RUN" = "1" ]; then echo "DRY-RUN: nothing deleted"; fi
+    if [ "$DRY_RUN" != "1" ]; then
+    sed 's|^|bash_events/|' "$TMP/orphans.txt" \
+      | tr '\n' '\0' | xargs -0 rm -f
+    echo "remaining files: $(ls bash_events | wc -l)"
+    fi
+    fi
+    fi
+
+    echo "== 4. workspaces orphelins (non references, inactifs 7j, git propre) =="
+    : > "$TMP/ws_candidates.txt"
+    for d in "$WS1"/*/; do
+      [ -d "$d" ] || continue
+      case "$d" in
+        "$WS1/automation-runs/"|"$WS1/automation-state/") continue ;;
+      esac
+      echo "${d%/}" >> "$TMP/ws_candidates.txt"
+    done
+    for d in "$WS2"/*/; do
+      [ -d "$d" ] || continue
+      echo "${d%/}" >> "$TMP/ws_candidates.txt"
+    done
+    LC_ALL=C sort -u -o "$TMP/ws_candidates.txt" "$TMP/ws_candidates.txt"
+    echo "candidate workspaces: $(wc -l < "$TMP/ws_candidates.txt")"
+    LC_ALL=C comm -23 "$TMP/ws_candidates.txt" "$TMP/ref_top.txt" \
+      > "$TMP/ws_orphans.txt"
+    : > "$TMP/ws_todel.txt"
+    while IFS= read -r w; do
+      # Paranoïa : ne jamais sortir des deux racines (candidats énumérés,
+      # mais on revérifie avant tout rm -rf).
+      case "$w" in "$WS1"/*|"$WS2"/*) ;; *) echo "SKIP (hors racines): $w"; continue ;; esac
+      [ -d "$w" ] || continue
+      if find "$w" -mmin -10080 -print -quit 2>/dev/null | grep -q .; then
+        echo "SKIP (activite < 7j): $w"; continue
+      fi
+      if [ -d "$w/.git" ]; then
+        if [ -n "$(git -C "$w" status --porcelain 2>/dev/null)" ]; then
+          echo "SKIP (git dirty): $w"; continue
+        fi
+      fi
+      echo "$w" >> "$TMP/ws_todel.txt"
+    done < "$TMP/ws_orphans.txt"
+    M=$(wc -l < "$TMP/ws_todel.txt")
+    echo "workspace orphans to delete: $M"
+    if [ "$M" -gt 0 ]; then
+    echo "--- tailles ---"
+    tr '\n' '\0' < "$TMP/ws_todel.txt" | xargs -0 du -sh 2>/dev/null
+    if [ "$DRY_RUN" = "1" ]; then echo "DRY-RUN: nothing deleted"; fi
+    if [ "$DRY_RUN" != "1" ]; then
+    tr '\n' '\0' < "$TMP/ws_todel.txt" | xargs -0 rm -rf --
+    echo "done"
+    fi
+    fi
+
+    echo "== df -i =="; df -i . | tail -1

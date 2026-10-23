@@ -39,7 +39,12 @@ ingress:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/auth-cache-key: "$cookie__openhands_oauth"
+    nginx.ingress.kubernetes.io/auth-cache-duration: "200 202 10m"
     nginx.ingress.kubernetes.io/auth-url: "http://openhands-oauth2-proxy.openhands.svc.cluster.local:4180/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://agent.logora.com/oauth2/start?rd=$escaped_request_uri"
   hosts:
@@ -54,8 +59,9 @@ ingress:
 
 # ── LLM configuration ────────────────────────────────────────────────────────
 # The LLM is configured in the Agent Canvas UI (Settings → LLM), which stores
-# it durably on the PVC (~/.openhands). A Secret (openhands-llm) can be used
-# to seed an API key out of band if desired — never commit secrets.
+# it durably on the PVC (~/.openhands/settings.json). That file is the source
+# of truth — a Secret/env seed only applies on first boot, never over it.
+# A Secret (openhands-llm) can be used to seed an API key out of band — never commit secrets.
 # Example (env-style, used only if you prefer not to configure in the UI):
 #   config:
 #     extraEnv:
@@ -68,6 +74,104 @@ ingress:
 #           secretKeyRef:
 #             name: openhands-llm
 #             key: LLM_API_KEY
+
+# ── Slack (Socket Mode stream) ────────────────────────────────────────────────
+# The automation service holds an outbound Socket Mode connection to Slack and
+# pushes app_mention events into event-triggered automations — the self-hosted
+# equivalent of webhooks. Requires Agent Canvas >= 1.17.0
+# (openhands-automation >= 1.10.0). Tokens live in the openhands-slack Secret
+# (see README "Slack (Socket Mode)" section) — never commit them.
+config:
+  extraEnv:
+    - name: AUTOMATION_SLACK_APPS
+      valueFrom:
+        secretKeyRef:
+          name: openhands-slack
+          key: AUTOMATION_SLACK_APPS
+    # ── Agent-server local ───────────────────────────────────────────
+    # AUTOMATION_AGENT_SERVER_URL n'est pas défini : l'entrypoint utilise
+    # l'agent-server du pod (http://127.0.0.1:18000). Les runs d'automation
+    # consomment donc les mêmes slots que les conversations de l'UI.
+    # ── Callbacks automation ─────────────────────────────────────────
+    # Le dispatcher construit les callback URLs depuis AUTOMATION_BASE_URL.
+    # L'Ingress automation-callback-ingress.yaml expose /api/automation/*
+    # sans oauth2-proxy ; l'auth est le Bearer AUTOMATION_LOCAL_API_KEY
+    # (secret openhands-session-api), injecté dans les runs via
+    # AUTOMATION_CALLBACK_API_KEY par le dispatcher.
+    - name: AUTOMATION_BASE_URL
+      value: "https://agent.logora.com"
+    - name: AUTOMATION_LOCAL_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openhands-session-api
+          key: sessionApiKey
+    # ── Limites runtime ──────────────────────────────────────────────
+    # 6 runs actifs max, partagés entre l'UI et les automations. Au-delà,
+    # l'agent-server répond 429 (pas de file d'attente native).
+    - name: OH_MAX_CONCURRENT_RUNS
+      value: "6"
+    # Le bouton VS Code de l'UI n'est pas utilisé : on n'embarque pas
+    # OpenVSCode Server dans le pod.
+    - name: OH_ENABLE_VSCODE
+      value: "false"
+    # ── Sobriété mémoire ─────────────────────────────────────────────
+    # Le browser reste activé (les agents en ont besoin) et OH_PRELOAD_TOOLS
+    # reste au défaut (true) pour éviter de payer l'import browser_use au
+    # premier usage.
+    # Éviction des conversations inactives après 5 min (défaut : 20 min).
+    # La passe tourne toutes les 150 s ; une conversation running, avec un
+    # websocket attaché ou un rerun en attente n'est jamais évincée. Elle se
+    # réhydrate depuis le PVC à la prochaine utilisation.
+    - name: OH_CONVERSATION_IDLE_TTL_SECONDS
+      value: "300"
+    # ── Télémétrie ───────────────────────────────────────────────────
+    # L'image cuit VITE_POSTHOG_API_KEY : sans ces variables, l'entrypoint
+    # dérive OH_TELEMETRY_EXPORTER=posthog. On coupe les trois couches
+    # (agent-server, automation, frontend).
+    - name: OH_TELEMETRY_EXPORTER
+      value: "none"
+    # L'image cuit VITE_POSTHOG_API_KEY. L'entrypoint le recopie dans
+    # AUTOMATION_POSTHOG_API_KEY avant de consulter VITE_DO_NOT_TRACK : il
+    # faut donc vider la source pour que le backend automation n'émette pas.
+    # Le frontend est couvert par AGENT_CANVAS_DISABLE_TELEMETRY.
+    - name: VITE_POSTHOG_API_KEY
+      value: ""
+    - name: DO_NOT_TRACK
+      value: "1"
+    - name: VITE_DO_NOT_TRACK
+      value: "1"
+    - name: AGENT_CANVAS_DISABLE_TELEMETRY
+      value: "1"
+    # ── Cycle de vie des workspaces automation ───────────────────────
+    # Depuis 1.32.0 (automation >= 1.25.0), le watchdog supprime le workspace
+    # d'un run dès qu'il devient terminal, SAUF si l'automation a
+    # keep_alive=true. C'est le comportement voulu : les conversations
+    # d'automation ne sont pas reprenables, seul leur texte est conservé par
+    # l'automation `Nettoyage horaire conversations inactives`.
+    # 0 désactive uniquement le balayage périodique (qui ignore les
+    # références de conversations) ; le CronJob `openhands-cleanup` reste le
+    # filet de sécurité pour les runs non terminalisés (crash/callback) et
+    # les workspaces antérieurs à 1.32.0.
+    # Ne pas passer keep_alive=true sur les automations.
+    - name: AUTOMATION_WORKSPACE_RETENTION_SECONDS
+      value: "0"
+    # Aligne le nombre de runs récupérés par poll sur OH_MAX_CONCURRENT_RUNS
+    # (6) : moins de tâches dispatchées qui repartent en 429.
+    - name: AUTOMATION_DISPATCHER_BATCH_SIZE
+      value: "6"
+
+# ── Secrets explicites ────────────────────────────────────────────────────
+# Session key historiquement auto-générée par l'entrypoint et persistée sur
+# le PVC (STATE_DIR/api-key.txt). Externalisée ici en Secret pour la rendre
+# stable et référençable : le chart la monte en OH_SESSION_API_KEYS_0, et
+# l'entrypoint en dérive OPENHANDS_AUTOMATION_API_KEY + AUTOMATION_LOCAL_API_KEY
+# (même clé unique pour tout le stack, cf. entrypoint.sh). Ne PAS y mettre une
+# valeur différente de l'actuelle sans prévenir : la clé est stockée dans le
+# localStorage des navigateurs (backend K8s).
+secrets:
+  sessionApiKey:
+    existingSecret: openhands-session-api
+    key: sessionApiKey
 
 # ── Dedicated node ──────────────────────────────────────────────────────────
 # OpenHands pins to a dedicated node so agent builds/executions cannot
@@ -98,7 +202,12 @@ rbac:
 resources:
   requests:
     cpu: 500m
-    memory: 1Gi
+    memory: 2Gi
+    ephemeral-storage: 2Gi
   limits:
     cpu: "4"
-    memory: 6Gi
+    # 16 Go de RAM sur le nœud, 14,1 Gi allocatable, ~3 Gi déjà consommés
+    # hors pod. 12Gi laissait le pod mettre le nœud en pression ; 10Gi garde
+    # ~1 Gi de marge tout en restant ~7x l'usage actuel.
+    memory: 10Gi
+    ephemeral-storage: 10Gi

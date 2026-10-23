@@ -1,0 +1,66 @@
+# Purge quotidienne des bash_events orphelins (Agent Canvas).
+#
+# Rythme quotidien (pas horaire comme automation-runs) : le scan de
+# corrélation lit ~800 Mo de conversations — trop lourd toutes les heures.
+# Même RBAC que openhands-cleanup (pods/exec) via le même ServiceAccount.
+#
+# DRY_RUN=1 tant que le volume d'orphelins n'est pas validé. Test :
+# kubectl create job --from=cronjob/openhands-cleanup-bash-events \
+#   -n openhands openhands-cleanup-bash-events-manual
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openhands-cleanup-bash-events
+  namespace: openhands
+  labels:
+    app: openhands-cleanup
+spec:
+  schedule: "30 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Le scan (grep sur ~800 Mo + tri + jointure) peut prendre plusieurs
+      # minutes sur volume réseau.
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: openhands-cleanup
+        spec:
+          serviceAccountName: openhands-cleanup
+          restartPolicy: OnFailure
+          nodeSelector:
+            node-role.openhands.infra: "true"
+          tolerations:
+            - key: openhands
+              operator: Equal
+              value: "true"
+              effect: NoSchedule
+          volumes:
+            - name: scripts
+              configMap:
+                name: openhands-cleanup-bash-events
+                defaultMode: 0755
+          containers:
+            - name: cleanup
+              image: docker.io/alpine/k8s:1.32.2
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "/scripts/local.sh"]
+              env:
+                # Corrélation corrigée le 2026-10-14 (scan events/*.json inclus) :
+                # 0 workspace orphelin, bash-events quasi stables → purge réelle.
+                - name: DRY_RUN
+                  value: "0"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
