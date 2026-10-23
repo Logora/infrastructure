@@ -106,10 +106,11 @@ config:
           name: openhands-session-api
           key: sessionApiKey
     # ── Limites runtime ──────────────────────────────────────────────
-    # 6 runs actifs max, partagés entre l'UI et les automations. Au-delà,
+    # 12 runs actifs max, partagés entre l'UI et les automations. Au-delà,
     # l'agent-server répond 429 (pas de file d'attente native).
+    # Le défaut du serveur (variable retirée) est 10 : on reste explicite.
     - name: OH_MAX_CONCURRENT_RUNS
-      value: "6"
+      value: "12"
     # Le bouton VS Code de l'UI n'est pas utilisé : on n'embarque pas
     # OpenVSCode Server dans le pod.
     - name: OH_ENABLE_VSCODE
@@ -160,8 +161,9 @@ config:
     # Ne pas passer keep_alive=true sur les automations.
     - name: AUTOMATION_WORKSPACE_RETENTION_SECONDS
       value: "600"
-    # Aligne le nombre de runs récupérés par poll sur OH_MAX_CONCURRENT_RUNS
-    # (6) : moins de tâches dispatchées qui repartent en 429.
+    # Volontairement inférieur à OH_MAX_CONCURRENT_RUNS : borne la rafale
+    # dispatchée par tick. Sans contrôle de capacité en amont, un batch plus
+    # large ne ferait qu'élargir le nombre de runs qui repartent en 429.
     - name: AUTOMATION_DISPATCHER_BATCH_SIZE
       value: "6"
 
