@@ -4,13 +4,6 @@ This repository contains Kubernetes deployment configurations for Logora's appli
 
 ## Applications
 
-### [Budibase](./budibase/)
-Low-code platform for building internal tools and applications.
-- **Deployment**: Official Helm chart
-- **Domain**: budibase.logora.fr
-- **Database**: CouchDB (included)
-- **Storage**: MinIO (included)
-
 ### [Directus](./directus/)
 Headless CMS for content management and API generation.
 - **Deployment**: Custom Helm chart
