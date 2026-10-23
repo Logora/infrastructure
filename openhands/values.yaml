@@ -144,23 +144,22 @@ config:
     - name: AGENT_CANVAS_DISABLE_TELEMETRY
       value: "1"
     # ── Cycle de vie des workspaces automation ───────────────────────
-    # Depuis 1.32.0 (automation >= 1.25.0), le watchdog supprime le workspace
-    # d'un run dès qu'il devient terminal, SAUF si l'automation a
-    # keep_alive=true. C'est le comportement voulu : les conversations
-    # d'automation ne sont pas reprenables, seul leur texte est conservé par
-    # l'automation `Nettoyage horaire conversations inactives`.
-    # 600 = 10 min de grâce après completed_at. Le sweep périodique du
-    # watchdog (toutes les 60 s, 50 runs par passe) supprime ensuite le
-    # workspace d'un run terminal, y compris s'il est encore référencé par
-    # une conversation : c'est volontaire, ces conversations ne sont pas
-    # reprenables. La grâce laisse aux callbacks de fin de run le temps de
-    # lire le workspace sans le conserver indéfiniment.
-    # Le CronJob `openhands-cleanup` reste le filet de sécurité pour les
-    # workspaces antérieurs à 1.32.0 et ceux dont la ligne automation_runs
-    # n'est pas exploitable (statut non terminal, base inaccessible).
+    # Depuis 1.32.0 (automation >= 1.25.0), le comportement natif du watchdog
+    # est de supprimer le workspace d'un run dès qu'il devient terminal, SAUF
+    # si l'automation a keep_alive=true. Les conversations d'automation ne sont
+    # pas reprenables ; seul leur texte est conservé par l'automation
+    # `Nettoyage horaire conversations inactives`.
+    # 0 = sweep du watchdog DÉSACTIVÉ (`if workspace_retention_seconds > 0`).
+    # Ce n'est pas une purge immédiate : les workspaces des runs terminés sont
+    # conservés, puis supprimés par le CronJob `openhands-cleanup` après 24 h
+    # de grâce. Choisi pour pouvoir inspecter un run après coup.
+    # Coût : ~1 jour de workspaces sur le PVC (contre 10 min auparavant).
+    # Le CronJob reste aussi le filet de sécurité pour les workspaces
+    # antérieurs à 1.32.0 et ceux dont la ligne automation_runs n'est pas
+    # exploitable (statut non terminal, base inaccessible).
     # Ne pas passer keep_alive=true sur les automations.
     - name: AUTOMATION_WORKSPACE_RETENTION_SECONDS
-      value: "600"
+      value: "0"
     # Volontairement inférieur à OH_MAX_CONCURRENT_RUNS : borne la rafale
     # dispatchée par tick. Sans contrôle de capacité en amont, un batch plus
     # large ne ferait qu'élargir le nombre de runs qui repartent en 429.
