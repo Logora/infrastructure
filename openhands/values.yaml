@@ -148,13 +148,18 @@ config:
     # keep_alive=true. C'est le comportement voulu : les conversations
     # d'automation ne sont pas reprenables, seul leur texte est conservé par
     # l'automation `Nettoyage horaire conversations inactives`.
-    # 0 désactive uniquement le balayage périodique (qui ignore les
-    # références de conversations) ; le CronJob `openhands-cleanup` reste le
-    # filet de sécurité pour les runs non terminalisés (crash/callback) et
-    # les workspaces antérieurs à 1.32.0.
+    # 600 = 10 min de grâce après completed_at. Le sweep périodique du
+    # watchdog (toutes les 60 s, 50 runs par passe) supprime ensuite le
+    # workspace d'un run terminal, y compris s'il est encore référencé par
+    # une conversation : c'est volontaire, ces conversations ne sont pas
+    # reprenables. La grâce laisse aux callbacks de fin de run le temps de
+    # lire le workspace sans le conserver indéfiniment.
+    # Le CronJob `openhands-cleanup` reste le filet de sécurité pour les
+    # workspaces antérieurs à 1.32.0 et ceux dont la ligne automation_runs
+    # n'est pas exploitable (statut non terminal, base inaccessible).
     # Ne pas passer keep_alive=true sur les automations.
     - name: AUTOMATION_WORKSPACE_RETENTION_SECONDS
-      value: "0"
+      value: "600"
     # Aligne le nombre de runs récupérés par poll sur OH_MAX_CONCURRENT_RUNS
     # (6) : moins de tâches dispatchées qui repartent en 429.
     - name: AUTOMATION_DISPATCHER_BATCH_SIZE

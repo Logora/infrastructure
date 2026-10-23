@@ -40,6 +40,13 @@ as soon as the run reaches a terminal state, unless the automation has
 `keep_alive=true`. This deployment intentionally leaves `keep_alive` unset:
 automation conversations are **not resumable**, only their text is kept.
 
+`AUTOMATION_WORKSPACE_RETENTION_SECONDS=600` enables the watchdog's periodic
+sweep: every 60 s it removes terminal runs whose `completed_at` is older than
+10 minutes — **even when a conversation still references the workspace**,
+because such a conversation cannot be resumed anyway. The 10-minute grace
+window lets late callbacks and log collection finish; the sweep processes 50
+workspaces per pass.
+
 The conversation transcript (`~/.openhands/agent-canvas/conversations/<id>/`,
 `meta.json` + `events/*.json`) remains readable in the UI until the
 `Nettoyage horaire conversations inactives` automation deletes it. Its
@@ -48,8 +55,13 @@ The conversation transcript (`~/.openhands/agent-canvas/conversations/<id>/`,
 
 `openhands-cleanup` and `openhands-cleanup-bash-events` are backstops for
 leftover workspaces/bash events (crashed or non-terminalized runs, and data
-predating 1.32.0). Do not set `keep_alive=true` unless resumable automation
-conversations are explicitly wanted.
+predating 1.32.0). The hourly `openhands-cleanup` no longer correlates with
+conversations: it deletes a workspace only when the matching `automation_runs`
+row is terminal (COMPLETED/FAILED/CANCELLED/SKIPPED), `completed_at` is older
+than 24 h, and nothing in the directory changed for 24 h. Workspaces with no
+row or an unknown/non-terminal status are always kept. Do not set
+`keep_alive=true` unless resumable automation conversations are explicitly
+wanted.
 
 ## Prerequisites
 
@@ -287,14 +299,18 @@ kubectl label node <node-name> node-role.openhands.infra-
   `kubectl -n openhands patch pvc data-agent-canvas-0 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'`.
 - **500 `No space left on device` (`Errno 28`) with free GBs left**: the
   filesystem is out of **inodes** (`df -i` shows 100% `IUse%`), not bytes.
-  Automation runs used to leave full workdirs in
-  `~/.openhands/workspaces/automation-runs/<run-id>` — these are now purged
-  automatically every hour by the `openhands-cleanup` CronJob (see
-  `./cleanup/`). Policy: only run dirs referenced by NO existing conversation
-  AND inactive 24h are deleted. (Incident 2026-10-14: the former "keep 5
-  newest" policy deleted workdirs of 192 live conversations -> bash
-  FileNotFoundError on resume. Those workdirs are unrecoverable; affected
-  conversations must be restarted. Never go back to recency-only purging.)
+  Automation runs leave workdirs in
+  `~/.openhands/workspaces/automation-runs/<run-id>`. Two layers reclaim them:
+  the native watchdog sweep (terminal run + 10 min) and, hourly, the
+  `openhands-cleanup` CronJob (see `./cleanup/`) for pre-1.32.0 residue and
+  workspaces the native sweep missed. CronJob policy: `automation_runs.status`
+  terminal AND `completed_at` > 24 h AND no file mtime < 24 h. Conversation
+  references are ignored on purpose (automation conversations are not
+  resumable since 1.32.0); a workspace without a run row or with a
+  non-terminal status is always kept. (Incident 2026-10-14: the former
+  "keep 5 newest" policy deleted workdirs of 192 live conversations -> bash
+  FileNotFoundError on resume. Never purge on recency alone without checking
+  the run status.)
   Manual fallback:
   ```bash
   kubectl -n openhands exec statefulset/agent-canvas -- df -i /home/openhands/.openhands

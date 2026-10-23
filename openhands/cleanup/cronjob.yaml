@@ -3,20 +3,31 @@
 # Pourquoi côté serveur et pas en automatisation LLM :
 # - déterministe (ne dépend ni du modèle, ni du quota OpenRouter, ni d'une
 #   conversation) et gratuit (aucun token consommé) ;
-# - chaque run laisse un workdir complet (~550M, dizaines de milliers de
-#   fichiers) dans ~/.openhands/workspaces/automation-runs → c'est ce qui
-#   a déjà saturé les inodes du PVC (cf. README "Troubleshooting").
+# - chaque run laisse un workdir (~550M, dizaines de milliers de fichiers)
+#   dans ~/.openhands/workspaces/automation-runs → c'est ce qui a déjà saturé
+#   les inodes du PVC (cf. README "Troubleshooting").
 #
-# Politique (corrigée 2026-10-14 après casse de 192 conversations) : un run
-# n'est supprimé que s'il N'EST REFERENCE PAR AUCUNE conversation existante
-# (working_dir dans meta.json) ET qu'il est inactif depuis 24h. L'ancien
-# "garde les 5 plus récents" supprimait les workdirs de conversations
-# vivantes -> FileNotFoundError en cascade à chaque reprise.
-# Depuis Agent Canvas 1.32.0, le watchdog supprime le workspace dès la fin du
-# run : ce CronJob ne traite plus que les résidus (runs non terminalisés,
-# crashes) et les workspaces antérieurs à 1.32.0. La corrélation avec les
-# conversations est conservée par prudence.
-# Ne touche jamais à agent-canvas/conversations ni aux autres workspaces.
+# Politique (depuis 2026-10-23) : un run n'est supprimé que si
+#   1. son statut dans `automation/automations.db` (table automation_runs)
+#      est terminal — COMPLETED / FAILED / CANCELLED / SKIPPED — et que
+#      completed_at (à défaut created_at) date de plus de 24 h ;
+#   2. aucun fichier du workdir n'a été modifié depuis 24 h (garde-fou
+#      anti-course si un process écrit encore).
+# La corrélation avec les conversations (working_dir dans meta.json) a été
+# retirée : depuis Agent Canvas 1.32.0 les conversations d'automation ne sont
+# pas reprenables (keep_alive=false), leur texte est conservé séparément par
+# l'automation `Nettoyage horaire conversations inactives`. Être référencé
+# par une conversation ne signifie donc plus qu'un workspace doit vivre.
+# Rappel incident 2026-10-14 : ne JAMAIS purger sur le seul critère de
+# récence sans vérifier l'état du run (l'ancien "garde les 5 plus récents"
+# avait cassé 192 conversations vivantes). Un workdir absent de la base ou
+# dont le statut est inconnu/non terminal est TOUJOURS conservé.
+# Depuis 1.32.0, le sweep natif du watchdog (AUTOMATION_WORKSPACE_RETENTION_
+# SECONDS=600, 10 min de grâce) traite déjà les runs terminaux. Ce CronJob
+# reste le filet pour les runs antérieurs à 1.32.0 et les workspaces dont le
+# sweep natif n'a pas pu s'occuper (batch interrompu, ligne non terminale).
+# Ne touche jamais à agent-canvas/conversations, automation-state ni aux
+# autres workspaces.
 #
 # Application : kubectl apply -f openhands/cleanup/
 # Test manuel : kubectl create job --from=cronjob/openhands-cleanup \
@@ -31,8 +42,8 @@ metadata:
 spec:
   # Toutes les heures — les runs s'accumulent vite (~35/h).
   schedule: "0 * * * *"
-  # Suspendu le temps de valider la politique par corrélation (validée
-  # 2026-10-14 : 0 suppression abusive sur 29 runs) -> réactivé.
+  # Politique de purge validée puis simplifiée le 2026-10-23 (statut du run
+  # en base au lieu de la corrélation conversations) -> réactivé.
   suspend: false
   # Interdit le chevauchement des exécutions.
   concurrencyPolicy: Forbid
@@ -41,9 +52,9 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
-      # La purge initiale (des dizaines de runs × dizaines de milliers de
-      # fichiers sur volume réseau) peut prendre plusieurs minutes.
-      activeDeadlineSeconds: 600
+      # La première purge peut traiter des centaines de workdirs (dizaines de
+      # milliers de fichiers sur volume réseau) : plusieurs minutes.
+      activeDeadlineSeconds: 1800
       template:
         metadata:
           labels:
@@ -65,12 +76,141 @@ spec:
               # plus que `latest`, donc inutilisable ici.
               image: docker.io/alpine/k8s:1.32.2
               imagePullPolicy: IfNotPresent
+              env:
+                # 1 = inventaire seulement (aucune suppression).
+                - name: DRY_RUN
+                  value: "0"
               command:
                 - /bin/sh
                 - -c
                 - |
-                  kubectl -n openhands exec agent-canvas-0 -- sh -c \
-                    'cd /home/openhands/.openhands/workspaces/automation-runs || { echo "no automation-runs dir, nothing to do"; exit 0; }; echo "runs before: $(ls | wc -l)"; df -i . | tail -1; grep -rhoE "\"working_dir\":\"[^\"]*automation-runs/[^\"]+\"" /home/openhands/.openhands/agent-canvas/conversations/*/meta.json 2>/dev/null | sed "s|.*/automation-runs/||; s|/.*||; s|\"||" | sort -u > /tmp/ref_runs.txt; echo "referenced runs: $(wc -l < /tmp/ref_runs.txt)"; for r in */; do r=${r%/}; case "$r" in *[^A-Za-z0-9_.-]*|"") continue;; esac; grep -qxF "$r" /tmp/ref_runs.txt && continue; if find "$r" -mmin -1440 -print -quit 2>/dev/null | grep -q .; then continue; fi; echo "DELETE: $r"; rm -rf -- "$r"; done; echo "runs after: $(ls | wc -l)"; df -i . | tail -1'
+                  kubectl -n openhands exec -i agent-canvas-0 -- \
+                    env DRY_RUN="${DRY_RUN:-0}" python3 - <<'PY'
+                  import os
+                  import shutil
+                  import sqlite3
+                  import sys
+                  import time
+                  from uuid import UUID
+
+                  RUNS_ROOT = "/home/openhands/.openhands/workspaces/automation-runs"
+                  DB_PATH = "/home/openhands/.openhands/automation/automations.db"
+                  TERMINAL = ("COMPLETED", "FAILED", "CANCELLED", "SKIPPED")
+                  GRACE_SECONDS = 24 * 3600
+                  DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
+
+
+                  def log(message):
+                      print(message, flush=True)
+
+
+                  def scan_runs():
+                      """Return {run_id_hex: path} for canonical UUID dirs only."""
+                      runs = {}
+                      with os.scandir(RUNS_ROOT) as entries:
+                          for entry in entries:
+                              try:
+                                  if str(UUID(entry.name)) != entry.name:
+                                      continue
+                              except ValueError:
+                                      continue
+                              if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                                  continue
+                              runs[entry.name.replace("-", "")] = entry.path
+                      return runs
+
+
+                  def terminal_runs_older_than_a_day(run_ids):
+                      """Return {run_id_hex: timestamp} for terminal runs > 24h."""
+                      if not run_ids:
+                          return {}
+                      conn = sqlite3.connect(
+                          "file:%s?mode=ro" % DB_PATH, uri=True, timeout=30
+                      )
+                      conn.execute("PRAGMA busy_timeout=30000")
+                      found = {}
+                      try:
+                          ids = list(run_ids)
+                          for start in range(0, len(ids), 400):
+                              chunk = ids[start:start + 400]
+                              query = (
+                                  "SELECT id, COALESCE(completed_at, created_at) FROM automation_runs "
+                                  "WHERE status IN (%s) "
+                                  "AND datetime(COALESCE(completed_at, created_at)) < datetime('now', '-24 hours') "
+                                  "AND id IN (%s)"
+                                  % (
+                                      ",".join("?" * len(TERMINAL)),
+                                      ",".join("?" * len(chunk)),
+                                  )
+                              )
+                              for run_id, stamp in conn.execute(query, TERMINAL + tuple(chunk)):
+                                  found[run_id] = stamp or ""
+                      finally:
+                          conn.close()
+                      return found
+
+
+                  def has_recent_activity(path, cutoff):
+                      """True if the dir or any entry was touched after cutoff."""
+                      try:
+                          if os.lstat(path).st_mtime > cutoff:
+                              return True
+                          for root, dirs, files in os.walk(path):
+                              for name in dirs + files:
+                                  try:
+                                      stat = os.lstat(os.path.join(root, name))
+                                  except OSError:
+                                      # Unreadable entry: assume live, never delete.
+                                      return True
+                                  if stat.st_mtime > cutoff:
+                                      return True
+                      except OSError:
+                          return True
+                      return False
+
+
+                  def main():
+                      if not os.path.isdir(RUNS_ROOT):
+                          log("no automation-runs dir, nothing to do")
+                          return 0
+                      runs = scan_runs()
+                      log("runs before: %d" % len(runs))
+                      terminal = terminal_runs_older_than_a_day(runs)
+                      log("terminal runs >24h: %d" % len(terminal))
+                      cutoff = time.time() - GRACE_SECONDS
+                      root = os.path.realpath(RUNS_ROOT)
+                      deleted = active = errors = 0
+                      for run_id, stamp in sorted(terminal.items(), key=lambda item: item[1]):
+                          path = runs[run_id]
+                          if os.path.islink(path) or not os.path.isdir(path):
+                              continue
+                          if os.path.dirname(os.path.realpath(path)) != root:
+                              log("SKIP (hors racine): %s" % path)
+                              continue
+                          if has_recent_activity(path, cutoff):
+                              log("SKIP (activité < 24h, completed_at=%s): %s" % (stamp, os.path.basename(path)))
+                              active += 1
+                              continue
+                          if DRY_RUN:
+                              log("DRY-RUN DELETE: %s (completed_at=%s)" % (os.path.basename(path), stamp))
+                              continue
+                          log("DELETE: %s (completed_at=%s)" % (os.path.basename(path), stamp))
+                          try:
+                              shutil.rmtree(path)
+                              deleted += 1
+                          except OSError as exc:
+                              log("ERROR: %s: %s" % (os.path.basename(path), exc))
+                              errors += 1
+                      log("deleted: %d, skipped (active): %d, errors: %d" % (deleted, active, errors))
+                      log("runs after: %d" % len(scan_runs()))
+                      stats = os.statvfs(RUNS_ROOT)
+                      used = stats.f_files - stats.f_ffree
+                      log("inodes used: %d/%d (%.0f%%)" % (used, stats.f_files, 100.0 * used / stats.f_files))
+                      return 0
+
+
+                  sys.exit(main())
+                  PY
               resources:
                 requests:
                   cpu: 50m
