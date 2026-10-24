@@ -106,6 +106,12 @@ config:
           name: openhands-session-api
           key: sessionApiKey
     # ── Limites runtime ──────────────────────────────────────────────
+    # Plafond du timeout configurable par automation (défaut image : 1800 s).
+    # N'allonge PAS les automations existantes : leur `timeout` en base reste
+    # la valeur effective, plafonnée par ce maximum (min(timeout, max)).
+    # 3600 s = 1 h ; un `timeout` null retombe sur le défaut 600 s.
+    - name: AUTOMATION_MAX_RUN_DURATION
+      value: "3600"
     # 12 runs actifs max, partagés entre l'UI et les automations. Au-delà,
     # l'agent-server répond 429 (pas de file d'attente native).
     # Le défaut du serveur (variable retirée) est 10 : on reste explicite.

@@ -22,10 +22,11 @@
 # récence sans vérifier l'état du run (l'ancien "garde les 5 plus récents"
 # avait cassé 192 conversations vivantes). Un workdir absent de la base ou
 # dont le statut est inconnu/non terminal est TOUJOURS conservé.
-# Depuis 1.32.0, le sweep natif du watchdog (AUTOMATION_WORKSPACE_RETENTION_
-# SECONDS=600, 10 min de grâce) traite déjà les runs terminaux. Ce CronJob
-# reste le filet pour les runs antérieurs à 1.32.0 et les workspaces dont le
-# sweep natif n'a pas pu s'occuper (batch interrompu, ligne non terminale).
+# Depuis 1.32.0, le sweep natif du watchdog existe, mais il est désactivé ici
+# (AUTOMATION_WORKSPACE_RETENTION_SECONDS=0) pour garder les runs inspectables.
+# Ce CronJob reste le filet pour les runs antérieurs à 1.32.0 et les workspaces
+# dont le sweep natif n'aurait pas pu s'occuper (batch interrompu, ligne non
+# terminale).
 # Ne touche jamais à agent-canvas/conversations, automation-state ni aux
 # autres workspaces.
 #
