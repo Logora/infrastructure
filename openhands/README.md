@@ -1,6 +1,6 @@
 # OpenHands (Agent Canvas) on Kubernetes
 
-This folder contains everything needed to deploy **Agent Canvas 1.32.0** — the
+This folder contains everything needed to deploy **Agent Canvas 1.33.0** — the
 self-hosted, single-tenant OpenHands deployment (web UI + agent-server +
 automations in one all-in-one image) — on Kubernetes, protected in front by
 **oauth2-proxy** authenticating against a **GitHub organization**.
@@ -40,12 +40,12 @@ as soon as the run reaches a terminal state, unless the automation has
 `keep_alive=true`. This deployment intentionally leaves `keep_alive` unset:
 automation conversations are **not resumable**, only their text is kept.
 
-`AUTOMATION_WORKSPACE_RETENTION_SECONDS=600` enables the watchdog's periodic
-sweep: every 60 s it removes terminal runs whose `completed_at` is older than
-10 minutes — **even when a conversation still references the workspace**,
-because such a conversation cannot be resumed anyway. The 10-minute grace
-window lets late callbacks and log collection finish; the sweep processes 50
-workspaces per pass.
+`AUTOMATION_WORKSPACE_RETENTION_SECONDS=0` disables the watchdog's periodic
+sweep (`if workspace_retention_seconds > 0`). Terminal workspaces are kept
+until the hourly `openhands-cleanup` CronJob removes them after a 24 h grace
+period — intentional, so a finished run can still be inspected after the fact.
+Cost: roughly one day of automation workspaces on the PVC (against 10 minutes
+before).
 
 The conversation transcript (`~/.openhands/agent-canvas/conversations/<id>/`,
 `meta.json` + `events/*.json`) remains readable in the UI until the
@@ -62,6 +62,21 @@ than 24 h, and nothing in the directory changed for 24 h. Workspaces with no
 row or an unknown/non-terminal status are always kept. Do not set
 `keep_alive=true` unless resumable automation conversations are explicitly
 wanted.
+
+### Automation run timeout (1.32.0+)
+
+`AUTOMATION_MAX_RUN_DURATION=3600` raises the ceiling for the per-automation
+`timeout` (image default: 1800 s). It is a **validation ceiling**, not a
+default: a run resolves to `min(automation.timeout, max_run_duration)`, so
+raising it does not lengthen any existing automation — the stored `timeout`
+must be raised explicitly (UI, or `PATCH /api/automation/v1/{id}` with
+`{"timeout": 3600}`). Automations created without a timeout fall back to
+`AUTOMATION_DEFAULT_RUN_DURATION` (600 s), unaffected by this ceiling.
+
+Worst-case run lifetime is `timeout + AUTOMATION_RUN_TIMEOUT_MARGIN` (default
+120 s). Watch capacity: automation runs share the `OH_MAX_CONCURRENT_RUNS`
+slots with UI conversations, so hour-long automations hold a slot twice as
+long as under the former 30-minute ceiling.
 
 ## Prerequisites
 
@@ -140,7 +155,7 @@ There is **no published Helm repo** — the chart lives in the OpenHands
 source tree. Clone it and install from the local path:
 
 ```bash
-git clone --branch v1.32.0 --depth 1 \
+git clone --branch v1.33.0 --depth 1 \
   https://github.com/OpenHands/OpenHands.git
 cd OpenHands
 
@@ -156,10 +171,14 @@ helm upgrade agent-canvas ./helm/agent-canvas \
   --namespace openhands --values /path/to/openhands/values.yaml
 ```
 
-> **Upgrading to 1.32.0**: back up `~/.openhands/automation/automations.db`
-> (or snapshot the PVC) before the upgrade. Alembic migration 034 is
-> additive; rolling back to 1.31.0 requires restoring the pre-upgrade
-> database because 1.31.0 does not know revision 034.
+> **Upgrading 1.32.0 → 1.33.0**: no database migration and no runtime change.
+> 1.33.0 ships the same `openhands-automation` 1.25.1 and
+> `openhands-agent-server` 1.58.1; the Helm chart templates and values are
+> identical, only `appVersion` moves. A backup of
+> `~/.openhands/automation/automations.db` (or a PVC snapshot) is still
+> recommended before any upgrade. Historical caveat: revision 034 was introduced
+> by 1.32.0, so rolling back below 1.31.0 requires restoring the pre-upgrade
+> database — `helm rollback` between 1.32.0 and 1.33.0 does not.
 
 ### 5. Deploy oauth2-proxy
 
